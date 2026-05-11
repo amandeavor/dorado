@@ -129,12 +129,6 @@ std::pair<std::string, barcode_kits::KitInfo> parse_custom_arrangement(
                     "barcode_inner1_pattern must all be set.");
         }
 
-        if (new_kit.ends_different || !new_kit.double_ends) {
-            throw std::runtime_error(
-                    "For dual barcodes, only double-ended kits where both ends are the same are "
-                    "currently supported.");
-        }
-
         // Fetch inner barcode context
         std::string barcode_inner1_pattern =
                 toml::find<std::string>(config, "barcode_inner1_pattern");
@@ -158,6 +152,13 @@ std::pair<std::string, barcode_kits::KitInfo> parse_custom_arrangement(
                         "Inner barcodes cannot be specified as double ended if the outer barcodes "
                         "are not double ended.");
             }
+            // Note this limitation will be removed in future, so the ends_different check below
+            //  is still useful to ensure future kits are self-consistent.
+            if (new_kit.ends_different) {
+                throw std::runtime_error(
+                        "For dual barcodes, double-ended kits where both ends are not the same are "
+                        "currently unsupported.");
+            }
             // Fetch inner barcode 2 context.
             new_kit.bottom_mid_flank = toml::find<std::string>(config, "mask2_mid");
             std::string barcode_inner2_pattern =
@@ -165,6 +166,9 @@ std::pair<std::string, barcode_kits::KitInfo> parse_custom_arrangement(
             fill_bc_sequences(barcode_inner2_pattern, new_kit.barcodes_inner2, bc_inner_start_idx,
                               bc_inner_end_idx);
 
+            // Note that it would be possible to set ends_different in this case, but it's not clear
+            //  if mismatching inners and matching outers would ever be needed in practice.  For now,
+            //  it's better to error on this, as it's likely to be a misconfigured .toml.
             if (!new_kit.ends_different && ((new_kit.bottom_mid_flank != new_kit.top_mid_flank) ||
                                             (barcode_inner1_pattern != barcode_inner2_pattern))) {
                 throw std::runtime_error(
