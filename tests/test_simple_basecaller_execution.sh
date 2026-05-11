@@ -789,9 +789,9 @@ if [[ -z "$SAMTOOLS_UNAVAILABLE" ]]; then
 fi
 
 title dorado custom demux dual barcode single end test stage
-$dorado_bin demux $data_dir/barcode_demux/dual/single.fastq --output-dir $output_dir/custom_demux_dual_single --kit-name EXP-DUAL00 --barcode-arrangement $data_dir/barcode_demux/custom_barcodes/dual_arr_single_end.toml
+$dorado_bin demux $data_dir/barcode_demux/dual/single.fastq --output-dir $output_dir/dual_single --kit-name EXP-DUAL00 --barcode-arrangement $data_dir/barcode_demux/custom_barcodes/dual_arr_single_end.toml
 if [[ -z "$SAMTOOLS_UNAVAILABLE" ]]; then
-    expected_path="$output_dir/custom_demux_dual_single/no_sample/19700101_0000_0_UNKNOWN_00000000/bam_pass/barcode11_barcode60/UNKNOWN_pass_barcode11_barcode60_00000000_00000000_0.bam"
+    expected_path="$output_dir/dual_single/no_sample/19700101_0000_0_UNKNOWN_00000000/bam_pass/barcode11_barcode60/UNKNOWN_pass_barcode11_barcode60_00000000_00000000_0.bam"
     samtools quickcheck -u $expected_path
     num_demuxed_reads=$(samtools view -c $expected_path)
     if [[ $num_demuxed_reads -ne "1" ]]; then
@@ -801,9 +801,9 @@ if [[ -z "$SAMTOOLS_UNAVAILABLE" ]]; then
 fi
 
 title dorado custom demux dual barcode double end test stage
-$dorado_bin demux $data_dir/barcode_demux/dual/single.fastq --output-dir $output_dir/custom_demux_dual_both --kit-name EXP-DUAL00 --barcode-arrangement $data_dir/barcode_demux/custom_barcodes/dual_arr.toml
+$dorado_bin demux $data_dir/barcode_demux/dual/single.fastq --output-dir $output_dir/dual_both --kit-name EXP-DUAL00 --barcode-arrangement $data_dir/barcode_demux/custom_barcodes/dual_arr.toml
 if [[ -z "$SAMTOOLS_UNAVAILABLE" ]]; then
-    expected_path="$output_dir/custom_demux_dual_both/no_sample/19700101_0000_0_UNKNOWN_00000000/bam_pass/barcode11_barcode60/UNKNOWN_pass_barcode11_barcode60_00000000_00000000_0.bam"
+    expected_path="$output_dir/dual_both/no_sample/19700101_0000_0_UNKNOWN_00000000/bam_pass/barcode11_barcode60/UNKNOWN_pass_barcode11_barcode60_00000000_00000000_0.bam"
     samtools quickcheck -u $expected_path
     num_demuxed_reads=$(samtools view -c $expected_path)
     if [[ $num_demuxed_reads -ne "1" ]]; then
