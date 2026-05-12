@@ -171,6 +171,8 @@ CATCH_TEST_CASE("Parse custom barcode scoring params", "[barcode_demux]") {
     CATCH_CHECK(scoring_params.min_separation_only_dist == 5);
     CATCH_CHECK(scoring_params.flank_left_pad == 5);
     CATCH_CHECK(scoring_params.flank_right_pad == 10);
+    CATCH_CHECK(scoring_params.flank_left_pad_inner == 2);
+    CATCH_CHECK(scoring_params.flank_right_pad_inner == 3);
     CATCH_CHECK(scoring_params.front_barcode_window == 150);
     CATCH_CHECK(scoring_params.rear_barcode_window == 150);
     CATCH_CHECK(scoring_params.min_flank_score == Catch::Approx(0.5f));
@@ -190,6 +192,8 @@ CATCH_TEST_CASE("Parse default scoring params", "[barcode_demux]") {
     CATCH_CHECK(scoring_params.min_separation_only_dist == default_params.min_separation_only_dist);
     CATCH_CHECK(scoring_params.flank_left_pad == default_params.flank_left_pad);
     CATCH_CHECK(scoring_params.flank_right_pad == default_params.flank_right_pad);
+    CATCH_CHECK(scoring_params.flank_left_pad_inner == default_params.flank_left_pad_inner);
+    CATCH_CHECK(scoring_params.flank_right_pad_inner == default_params.flank_right_pad_inner);
 }
 
 CATCH_TEST_CASE("Check for normalized id pattern", "[barcode_demux]") {

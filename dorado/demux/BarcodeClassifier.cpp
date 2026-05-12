@@ -352,10 +352,10 @@ std::vector<BarcodeClassifier::BarcodeCandidateKit> BarcodeClassifier::generate_
                     extract_left_buffer(kit_info.top_front_flank, m_scoring_params.flank_left_pad);
             candidate.top_context_right_buffer =
                     extract_right_buffer(kit_info.top_mid_flank, m_scoring_params.flank_right_pad);
-            candidate.top_context_left_buffer_inner =
-                    extract_left_buffer(kit_info.top_mid_flank, m_scoring_params.flank_left_pad);
-            candidate.top_context_right_buffer_inner =
-                    extract_right_buffer(kit_info.top_rear_flank, m_scoring_params.flank_right_pad);
+            candidate.top_context_left_buffer_inner = extract_left_buffer(
+                    kit_info.top_mid_flank, m_scoring_params.flank_left_pad_inner);
+            candidate.top_context_right_buffer_inner = extract_right_buffer(
+                    kit_info.top_rear_flank, m_scoring_params.flank_right_pad_inner);
 
             auto top_front_flank_rc = utils::reverse_complement(kit_info.top_front_flank);
             auto top_mid_flank_rc = utils::reverse_complement(kit_info.top_mid_flank);
@@ -370,9 +370,9 @@ std::vector<BarcodeClassifier::BarcodeCandidateKit> BarcodeClassifier::generate_
             candidate.top_context_rev_right_buffer =
                     extract_right_buffer(top_front_flank_rc, m_scoring_params.flank_right_pad);
             candidate.top_context_rev_left_buffer_inner =
-                    extract_left_buffer(top_rear_flank_rc, m_scoring_params.flank_left_pad);
+                    extract_left_buffer(top_rear_flank_rc, m_scoring_params.flank_left_pad_inner);
             candidate.top_context_rev_right_buffer_inner =
-                    extract_right_buffer(top_mid_flank_rc, m_scoring_params.flank_right_pad);
+                    extract_right_buffer(top_mid_flank_rc, m_scoring_params.flank_right_pad_inner);
         }
 
         if (!kit_info.barcodes2.empty()) {
@@ -415,9 +415,9 @@ std::vector<BarcodeClassifier::BarcodeCandidateKit> BarcodeClassifier::generate_
                 candidate.bottom_context_right_buffer = extract_right_buffer(
                         kit_info.bottom_mid_flank, m_scoring_params.flank_right_pad);
                 candidate.bottom_context_left_buffer_inner = extract_left_buffer(
-                        kit_info.bottom_mid_flank, m_scoring_params.flank_left_pad);
+                        kit_info.bottom_mid_flank, m_scoring_params.flank_left_pad_inner);
                 candidate.bottom_context_right_buffer_inner = extract_right_buffer(
-                        kit_info.bottom_rear_flank, m_scoring_params.flank_right_pad);
+                        kit_info.bottom_rear_flank, m_scoring_params.flank_right_pad_inner);
 
                 auto bottom_front_flank_rc = utils::reverse_complement(kit_info.bottom_front_flank);
                 auto bottom_mid_flank_rc = utils::reverse_complement(kit_info.bottom_mid_flank);
@@ -431,10 +431,10 @@ std::vector<BarcodeClassifier::BarcodeCandidateKit> BarcodeClassifier::generate_
                         extract_left_buffer(bottom_mid_flank_rc, m_scoring_params.flank_left_pad);
                 candidate.bottom_context_rev_right_buffer = extract_right_buffer(
                         bottom_front_flank_rc, m_scoring_params.flank_right_pad);
-                candidate.bottom_context_rev_left_buffer_inner =
-                        extract_left_buffer(bottom_rear_flank_rc, m_scoring_params.flank_left_pad);
-                candidate.bottom_context_rev_right_buffer_inner =
-                        extract_right_buffer(bottom_mid_flank_rc, m_scoring_params.flank_right_pad);
+                candidate.bottom_context_rev_left_buffer_inner = extract_left_buffer(
+                        bottom_rear_flank_rc, m_scoring_params.flank_left_pad_inner);
+                candidate.bottom_context_rev_right_buffer_inner = extract_right_buffer(
+                        bottom_mid_flank_rc, m_scoring_params.flank_right_pad_inner);
             }
         }
 

@@ -218,6 +218,12 @@ dorado::barcode_kits::BarcodeKitScoringParams parse_scoring_params(
     if (config.contains("flank_right_pad")) {
         params.flank_right_pad = toml::find<int>(config, "flank_right_pad");
     }
+    if (config.contains("flank_left_pad_inner")) {
+        params.flank_left_pad_inner = toml::find<int>(config, "flank_left_pad_inner");
+    }
+    if (config.contains("flank_right_pad_inner")) {
+        params.flank_right_pad_inner = toml::find<int>(config, "flank_right_pad_inner");
+    }
     if (config.contains("front_barcode_window")) {
         params.front_barcode_window = toml::find<int>(config, "front_barcode_window");
     }
