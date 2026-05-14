@@ -80,7 +80,7 @@ std::pair<std::shared_ptr<mm_idx_t>, IndexLoadResult> Minimap2Index::load_initia
     if (index->k != m_options.index_options->get().k ||
         index->w != m_options.index_options->get().w) {
         spdlog::warn(
-                "Indexing parameters mismatch prebuilt index: using paramateres kmer "
+                "Indexing parameters mismatch prebuilt index: using parameters kmer "
                 "size={} and window size={} from prebuilt index.",
                 index->k, index->w);
     }
