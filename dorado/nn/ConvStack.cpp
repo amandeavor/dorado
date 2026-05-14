@@ -108,6 +108,11 @@ TensorLayout get_koi_lstm_input_layout(const int layer_size,
 #endif
 
 ConvStackImpl::ConvStackImpl(const std::vector<config::ConvParams> &layer_params) {
+    // TODO: I'm sorry, where do I put these?
+    // num_working_blocks is hard_coded in Koi, that's how the kernels operate
+    // min_chunksize_per_layer is 768 (the original min_chunksize) divided by subsequent layer's stride
+    int num_working_blocks_per_min_chunksize_list[5] = {1, 3, 2, 1, 1};
+    int min_chunksize_per_layer[5] = {768, 768, 768, 256, 128};
     for (size_t i = 0; i < layer_params.size(); ++i) {
         auto &layer = layers.emplace_back(layer_params[i]);
         auto opts = torch::nn::Conv1dOptions(layer.params.insize, layer.params.size,
@@ -116,6 +121,13 @@ ConvStackImpl::ConvStackImpl(const std::vector<config::ConvParams> &layer_params
                             .padding(layer.params.winlen / 2);
         layer.conv = register_module(std::string("conv") + std::to_string(i + 1),
                                      torch::nn::Conv1d(opts));
+        layer.conv_layer_num = i;
+        layer.num_working_blocks_per_min_chunksize = num_working_blocks_per_min_chunksize_list[i];
+        layer.min_chunksize_in = min_chunksize_per_layer[i];
+        // Last layer has default next_layer_padding = 0, intentionally, input to tx encoder is not padded
+        if (i > 0) {
+            layers[i-1].next_layer_padding = (layer.params.winlen / 2);
+        }
     }
 }
 
@@ -148,6 +160,15 @@ void ConvStackImpl::run_koi(WorkingMemory &wm, const AuxiliaryData *const aux) {
     for (auto &layer : layers) {
         layer.run_koi(wm, aux);
     }
+}
+
+at::Tensor ConvStackImpl::run_koi_vcs_sup(at::Tensor& x, const AuxiliaryData const *aux) {
+    const int total_num_min_chunksize = (aux->chunk_table.index({-1, 0}) + aux->chunk_table.index({-1, 1}) / 768).item<int>();
+    const int total_num_varlen_chunks = aux->chunk_table.size(0);
+    for (auto &layer : layers) {
+        x = layer.run_koi_vcs_sup(x, aux, total_num_min_chunksize, total_num_varlen_chunks);
+    }
+    return x;
 }
 #endif  // if DORADO_CUDA_BUILD
 
@@ -356,6 +377,100 @@ void ConvStackImpl::ConvLayer::run_koi(WorkingMemory &wm, const AuxiliaryData *c
                          int(conv_out.size(1)));
         }
     }
+}
+
+at::Tensor ConvStackImpl::ConvLayer::run_koi_vcs_sup(at::Tensor &conv_input,
+                                                     const AuxiliaryData const *aux,
+                                                     const int total_num_min_chunksize,
+                                                     const int total_num_varlen_chunks) {
+    // Implementation supposes chunk_table remains unchanged since entering ConvStack
+    // Eg: S | L            S = Start, L = Length
+    //     0 | 768
+    //   768 | 768*4
+    // 768*5 | 768*2
+    // Also expecting chunk_table.shape = (num_varlen_chunks, 2). Linearised = [[S, L], [S, L], [S, L], ...]
+    // This can of course be changed
+
+    auto stream = at::cuda::getCurrentCUDAStream().stream();
+    utils::ScopedProfileRange spr("conv", 2);
+    auto opts_f16 = in.options().dtype(torch::kF16);
+    auto opts_i32 = in.options().dtype(torch::kInt32);
+
+    const int padding = (params.winlen / 2);
+    const int C_in = params.insize;
+    const int C_out = params.size;
+    const int winlen = params.winlen;
+
+    if (!w_device.defined()) {
+        // conv->weight is [C_out, C_in, W], we want [C_out, W, C_in] and then further tiling
+        w_device = conv->weight.transpose(1, 2).contiguous().to(opts);
+
+        // Special tiling for first Conv
+        if (conv_layer_num == 0) {
+            w_device = w_device.view({C_out / 2, 2, winlen * C_in}).transpose(1, 2).contiguous();
+        }
+        else {
+            // Last layer needs to tile OUTSIZE, too big to fit in SMEM
+            const int SMEM_N = (conv_layer_num == 4) ? 128 : C_out;
+            w_device = w_device.view({C_out / SMEM_N, SMEM_N / 16, 2, 8, (winlen * C_in) / 16, 2, 8})
+                               .permute({0, 4, 1, 2, 5, 3, 6}).contiguous();
+        }
+        b_device = conv->bias.to(opts);
+    }
+
+    // Look-up tables and output tensor for this layer
+    at::Tensor koi_load_lut = torch::empty({total_num_min_chunksize * num_working_blocks_per_min_chunksize}, opts_i32);
+    at::Tensor koi_store_lut = torch::empty({total_num_min_chunksize * num_working_blocks_per_min_chunksize}, opts_i32);
+    int M_conv_in = (total_num_min_chunksize * min_chunksize_in) + ((total_num_varlen_chunks + 1) * padding);
+    int M_conv_out = (total_num_min_chunksize * (min_chunksize_in / stride)) + ((total_num_varlen_chunks + 1) * next_layer_padding);
+    at::Tensor conv_output = torch::empty({C_out / 8, M_conv_out, 8}, opts_f16);
+
+    koi_vcs_sup_fill_conv_load_store_lut(
+        stream_ptr,
+        total_num_varlen_chunks,
+        aux->chunk_table.data_ptr(),
+        koi_load_lut.data_ptr(),
+        koi_store_lut.data_ptr(),
+        conv_layer_num + 1,
+        conv_input.data_ptr(),
+        M_koi_conv_in,
+        num_working_blocks_per_min_chunksize,
+        min_chunksize_in,
+        stride,
+        padding,
+        next_layer_padding
+    );
+
+    if (conv_layer_num == 0) {
+        koi_vcs_sup_cnn1(
+            stream,
+            conv_input.data_ptr(),
+            w_device.data_ptr(),
+            conv_output.data_ptr(),
+            w_bias.data_ptr(),
+            koi_load_lut.data_ptr(),
+            koi_store_lut.data_ptr(),
+            total_num_min_chunksize * num_working_blocks_per_min_chunksize,
+            M_conv_out
+        );
+    }
+    else {
+        koi_vcs_sup_cnn(
+            stream,
+            conv_input.data_ptr(),
+            w_device.data_ptr(),
+            conv_output.data_ptr(),
+            w_bias.data_ptr(),
+            koi_load_lut.data_ptr(),
+            koi_store_lut.data_ptr(),
+            total_num_min_chunksize * num_working_blocks_per_min_chunksize,
+            conv_layer_num + 1, // +1 because Koi is implemented with Conv1, Conv2, Conv3 etc maybe should change that, but Im not calling next layers' conv layer
+            M_conv_in,
+            M_conv_out
+        );
+    }
+
+    return conv_output;
 }
 
 #endif  // if DORADO_CUDA_BUILD
