@@ -293,7 +293,7 @@ std::optional<Minimap2Options> try_parse_options_no_help(const std::string& mini
     return try_parse_options_impl(parser, minimap2_option_string, error_message);
 }
 
-void apply_cs_option(Minimap2Options& options, const std::string& cs_opt) {
+void apply_cs_option(Minimap2Options& options, std::string_view cs_opt) {
     if (cs_opt.empty()) {
         return;
     }
@@ -311,7 +311,7 @@ void apply_cs_option(Minimap2Options& options, const std::string& cs_opt) {
     }
 }
 
-void apply_dual_option(Minimap2Options& options, const std::string& dual) {
+void apply_dual_option(Minimap2Options& options, std::string_view dual) {
     if (dual.empty()) {
         return;
     }

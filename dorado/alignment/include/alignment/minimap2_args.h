@@ -4,6 +4,7 @@
 
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 using namespace std::literals;
@@ -40,8 +41,8 @@ std::optional<Minimap2Options> try_parse_options_no_help(const std::string& mini
 std::string get_help_message();
 
 // Helper functions for CorrectionMapperNode which uses options we don't yet support in the command line
-void apply_cs_option(Minimap2Options& options, const std::string& cs_opt);
-void apply_dual_option(Minimap2Options& options, const std::string& dual_yes_or_no);
+void apply_cs_option(Minimap2Options& options, std::string_view cs_opt);
+void apply_dual_option(Minimap2Options& options, std::string_view dual_yes_or_no);
 
 // Returns true in the minimap global flag 'MM_DBG_PRINT_ALN_SEQ' is set
 bool print_aln_seq();
