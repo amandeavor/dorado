@@ -32,7 +32,6 @@ struct ConvStackImpl : torch::nn::Module {
         // If non DORADO_CUDA_BUILD gets run, these get filled but never used, no probs
         int conv_layer_num;
         int num_working_blocks_per_min_chunksize;
-        int min_chunksize_in;
         int next_layer_padding{0};  // Initialised to 0 for last vcs sup convolution that does not get filled AND outputs without padding
 #if DORADO_CUDA_BUILD
         TensorLayout output_layout{TensorLayout::NTC};
@@ -41,6 +40,10 @@ struct ConvStackImpl : torch::nn::Module {
         at::Tensor w_device;
         at::Tensor w_t_device;
         at::Tensor b_device;
+
+        at::Tensor conv_load_lut;
+        at::Tensor conv_store_lut;
+        at::Tensor conv_output;
 
         void reserve_working_memory(WorkingMemory &wm, const AuxiliaryData *aux /* = nullptr */);
         void run_koi(WorkingMemory &wm, const AuxiliaryData *aux /* = nullptr */);

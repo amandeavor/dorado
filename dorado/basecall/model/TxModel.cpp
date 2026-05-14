@@ -17,23 +17,22 @@ TxModelImpl::TxModelImpl(const config::BasecallModelConfig &config,
     crf = register_module("crf", nn::LinearScaledCRF(config.tx->crf));
 }
 
-at::Tensor TxModelImpl::forward(const at::Tensor &chunk_or_batch, nn::AuxiliaryData *const aux) {
+at::Tensor TxModelImpl::forward(const at::Tensor &input, nn::AuxiliaryData const* aux) {
     at::Tensor h;
     {
         utils::ScopedProfileRange spr("Conv", 1);
         if (aux->chunk_table.defined()) {
-            // If VCS, chunk_or_batch should be entire batch
-            h = convs->run_koi_vcs_sup(chunk);
+            h = convs->run_koi_vcs_conv(input, aux);
         }
         else {
-            // If non-VCS, chunk_or_batch is a single chunk with NCT layout
+            // If non-VCS, input is NCT layout
             // Returns: NTC layout
-            h = convs->forward(chunk_or_batch);
+            h = convs->forward(input);
         }
     }
     {
         utils::ScopedProfileRange spr("TransEnc", 1);
-        h = tx_encoder(h);
+        h = tx_encoder(h, aux);
     }
     {
         utils::ScopedProfileRange spr("TransDec", 1);

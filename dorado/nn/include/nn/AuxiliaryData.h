@@ -47,6 +47,12 @@ public:
     at::Tensor device_chunk_sizes;
     at::Tensor device_chunk_offsets;
 
+    // TODO: Fill these variables as input gets generated
+    at::Tensor chunk_table;         // Torch Tensor of shape (total_num_varlen_chunks, 2). Column 0 is chunk start. Column 1 is chunk_length
+    int min_chunksize;              // This should be chunk_size_granularity() from BasecallModelConfig.h, aka 768
+    int total_num_min_chunksize;    // This is entire input length divided by min_chunksize
+    int total_num_varlen_chunks;    // Amount of varlen chunks in batch
+
 private:
     at::Tensor workspace_;
     std::int32_t N_{0};

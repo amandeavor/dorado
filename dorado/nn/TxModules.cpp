@@ -413,7 +413,8 @@ void TxEncoderImpl::remove_bits() {
 }
 #endif
 
-void TxEncoderImpl::koi_forward(utils::ScaledTensor &scaled_tensor, at::Tensor &x_f16) {
+void TxEncoderImpl::koi_forward(utils::ScaledTensor &scaled_tensor, at::Tensor &x_f16
+                                at::Tensor qkv_rope_lut, at::Tensor attn_lut) {
     (void)scaled_tensor;
     (void)x_f16;
 #if DORADO_CUDA_BUILD
@@ -559,7 +560,7 @@ void TxEncoderImpl::koi_forward(utils::ScaledTensor &scaled_tensor, at::Tensor &
     if (res == KOI_SUCCESS && ++calls) {
         // Apply masket attention
         utils::ScopedProfileRange spr("MEA", 3);
-        if (use_vcs) {
+        if (attn_lut.is_defined()) {
             // attn_lut is genuinely just AuxiliaryData's chunk_table
             res = koi_vcs_attn(stream, qkv.data_ptr(), attn_lut.data_ptr(), attn_lut.size(0), t_out_attn.data_ptr());
         }
@@ -835,9 +836,9 @@ at::Tensor TxEncoderStackImpl::forward(const at::Tensor &x, [[maybe_unused]] con
         int N, T, C;
         if (use_vcs) {
             // N = total amount of min_chunksize_blocks within batch
-            // T = min_working_block which is 768 / 12 aka min_chunksize / ConvStack_stride
-            N = (aux->chunk_table.index({-1, 0}) + aux->chunk_table.index({-1, 1})).item<int>() / 768;
-            T = 64;
+            // T = min_working_block which is min_chunksize / ConvStack_stride
+            N = aux->total_num_min_chunksize;
+            T = aux->min_chunksize;
             // Underlying input layout is (C / 8, M_in, 8)
             C = static_cast<int>(x.size(0) * 8);
         }
@@ -858,12 +859,11 @@ at::Tensor TxEncoderStackImpl::forward(const at::Tensor &x, [[maybe_unused]] con
                 auto opts_i32 = x.options().dtype(torch::kInt32);
                 qkv_rope_lut = torch::empty({N}, opts_i32);
 
-                int total_num_varlen_chunks = aux->chunk_table.size(0);
                 attn_lut = aux->chunk_table;
 
                 koi_vcs_sup_fill_qkv_rope_lut(
                     stream_ptr,
-                    total_num_varlen_chunks,
+                    aux->total_num_varlen_chunks,
                     T,
                     aux->chunk_table.data_ptr(),
                     qkv_rope_lut.data_ptr()
@@ -888,7 +888,7 @@ at::Tensor TxEncoderStackImpl::forward(const at::Tensor &x, [[maybe_unused]] con
         }
 
         for (auto &layer : layer_vec) {
-            layer->koi_forward(scaled_tensor, tiled_f16);
+            layer->koi_forward(scaled_tensor, tiled_f16, qkv_rope_lut, attn_lut);
         }
 
         at::Tensor untiled_f16;

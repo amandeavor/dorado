@@ -123,7 +123,6 @@ ConvStackImpl::ConvStackImpl(const std::vector<config::ConvParams> &layer_params
                                      torch::nn::Conv1d(opts));
         layer.conv_layer_num = i;
         layer.num_working_blocks_per_min_chunksize = num_working_blocks_per_min_chunksize_list[i];
-        layer.min_chunksize_in = min_chunksize_per_layer[i];
         // Last layer has default next_layer_padding = 0, intentionally, input to tx encoder is not padded
         if (i > 0) {
             layers[i-1].next_layer_padding = (layer.params.winlen / 2);
@@ -162,11 +161,10 @@ void ConvStackImpl::run_koi(WorkingMemory &wm, const AuxiliaryData *const aux) {
     }
 }
 
-at::Tensor ConvStackImpl::run_koi_vcs_sup(at::Tensor& x, const AuxiliaryData const *aux) {
-    const int total_num_min_chunksize = (aux->chunk_table.index({-1, 0}) + aux->chunk_table.index({-1, 1}) / 768).item<int>();
-    const int total_num_varlen_chunks = aux->chunk_table.size(0);
+at::Tensor ConvStackImpl::run_koi_vcs_conv(at::Tensor& x, AuxiliaryData const *aux) {
     for (auto &layer : layers) {
-        x = layer.run_koi_vcs_sup(x, aux, total_num_min_chunksize, total_num_varlen_chunks);
+        x = layer.run_koi_vcs_conv(x, aux);
+        aux->min_chunksize /= layer.params.stride;
     }
     return x;
 }
@@ -379,10 +377,8 @@ void ConvStackImpl::ConvLayer::run_koi(WorkingMemory &wm, const AuxiliaryData *c
     }
 }
 
-at::Tensor ConvStackImpl::ConvLayer::run_koi_vcs_sup(at::Tensor &conv_input,
-                                                     const AuxiliaryData const *aux,
-                                                     const int total_num_min_chunksize,
-                                                     const int total_num_varlen_chunks) {
+at::Tensor ConvStackImpl::ConvLayer::run_koi_vcs_conv(at::Tensor &conv_input,
+                                                      const AuxiliaryData const *aux) {
     // Implementation supposes chunk_table remains unchanged since entering ConvStack
     // Eg: S | L            S = Start, L = Length
     //     0 | 768
@@ -419,11 +415,11 @@ at::Tensor ConvStackImpl::ConvLayer::run_koi_vcs_sup(at::Tensor &conv_input,
     }
 
     // Look-up tables and output tensor for this layer
-    at::Tensor koi_load_lut = torch::empty({total_num_min_chunksize * num_working_blocks_per_min_chunksize}, opts_i32);
-    at::Tensor koi_store_lut = torch::empty({total_num_min_chunksize * num_working_blocks_per_min_chunksize}, opts_i32);
-    int M_conv_in = (total_num_min_chunksize * min_chunksize_in) + ((total_num_varlen_chunks + 1) * padding);
-    int M_conv_out = (total_num_min_chunksize * (min_chunksize_in / stride)) + ((total_num_varlen_chunks + 1) * next_layer_padding);
-    at::Tensor conv_output = torch::empty({C_out / 8, M_conv_out, 8}, opts_f16);
+    koi_load_lut = torch::empty({aux->total_num_min_chunksize * num_working_blocks_per_min_chunksize}, opts_i32);
+    koi_store_lut = torch::empty({aux->total_num_min_chunksize * num_working_blocks_per_min_chunksize}, opts_i32);
+    int M_conv_in = (aux->total_num_min_chunksize * aux->min_chunksize) + ((aux->total_num_varlen_chunks + 1) * padding);
+    int M_conv_out = (aux->total_num_min_chunksize * (aux->min_chunksize / stride)) + ((aux->total_num_varlen_chunks + 1) * next_layer_padding);
+    conv_output = torch::empty({C_out / 8, M_conv_out, 8}, opts_f16);
 
     koi_vcs_sup_fill_conv_load_store_lut(
         stream_ptr,
@@ -435,7 +431,7 @@ at::Tensor ConvStackImpl::ConvLayer::run_koi_vcs_sup(at::Tensor &conv_input,
         conv_input.data_ptr(),
         M_koi_conv_in,
         num_working_blocks_per_min_chunksize,
-        min_chunksize_in,
+        aux->min_chunksize,
         stride,
         padding,
         next_layer_padding
@@ -450,7 +446,7 @@ at::Tensor ConvStackImpl::ConvLayer::run_koi_vcs_sup(at::Tensor &conv_input,
             w_bias.data_ptr(),
             koi_load_lut.data_ptr(),
             koi_store_lut.data_ptr(),
-            total_num_min_chunksize * num_working_blocks_per_min_chunksize,
+            aux->total_num_min_chunksize * num_working_blocks_per_min_chunksize,
             M_conv_out
         );
     }
@@ -463,7 +459,7 @@ at::Tensor ConvStackImpl::ConvLayer::run_koi_vcs_sup(at::Tensor &conv_input,
             w_bias.data_ptr(),
             koi_load_lut.data_ptr(),
             koi_store_lut.data_ptr(),
-            total_num_min_chunksize * num_working_blocks_per_min_chunksize,
+            aux->total_num_min_chunksize * num_working_blocks_per_min_chunksize,
             conv_layer_num + 1, // +1 because Koi is implemented with Conv1, Conv2, Conv3 etc maybe should change that, but Im not calling next layers' conv layer
             M_conv_in,
             M_conv_out
