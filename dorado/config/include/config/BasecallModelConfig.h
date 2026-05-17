@@ -156,7 +156,7 @@ struct BasecallModelConfig {
         basecaller.normalise(chunk_size_granularity(), stride_inner());
     }
 
-    int chunk_size_granularity() const { return stride_inner() * (is_tx_model() ? 16 : 1); }
+    int chunk_size_granularity() const { return stride_inner() * (is_tx_model() ? 64 : 1); }
 
     // True if `chunk_size` is greater than `overlap` and evenly divisible by
     // `chunk_size_granularity`, and `overlap` is evenly divisible by `stride_inner`
