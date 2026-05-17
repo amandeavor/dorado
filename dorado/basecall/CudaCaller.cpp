@@ -427,7 +427,10 @@ CudaCaller::BatchDimsAndMaxSizes CudaCaller::calculate_batch_sizes(
     // we don't use extra chunk sizes for duplex. Similarly, for the low latency use case
     // (adaptive sampling) we only want one (short) chunk size so that all those reads go into
     // the same queue and complete as fast as possible.
-    if (pipeline_type == PipelineType::simplex) {
+
+    // ? Creation of shorter chunk size queue should be skipped for VCS Tx right ?
+    if (pipeline_type == PipelineType::simplex &&
+        !(model_config.is_tx_model() && m_variable_chunk_sizes)) {
         const char *env_extra_chunk_sizes = std::getenv("DORADO_EXTRA_CHUNK_SIZES");
         if (env_extra_chunk_sizes != nullptr) {
             constexpr char SEPARATOR = ';';
