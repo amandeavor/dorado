@@ -130,8 +130,9 @@ void BasecallerNode::input_thread_fn() {
 
         if (m_variable_chunk_sizes) {
             const std::vector<std::pair<std::size_t, std::size_t>> intervals =
-                    utils::generate_variable_chunks(raw_size, chunk_size, m_model_stride,
-                                                    m_overlap);
+            m_is_tx_model ? utils::generate_variable_chunks_tx(raw_size, chunk_size, m_model_stride, m_chunk_size_granularity, m_overlap)
+                          : utils::generate_variable_chunks(raw_size, chunk_size, m_model_stride,
+                                            m_overlap);
             read_chunks.reserve(std::size(intervals));
             for (std::size_t i = 0; i < std::size(intervals); ++i) {
                 read_chunks.emplace_back(std::make_unique<BasecallingChunk>(
@@ -294,6 +295,16 @@ void BasecallerNode::basecall_worker_thread(int worker_id) {
 #endif
     at::InferenceMode inference_mode_guard;
 
+    /*
+    Comments to be deleted regarding Tx VCS
+    If doing Tx VCS, chunk_size below should be max_chunk_size, determined somehow from the model config.toml's chunksize
+    Now, batch_size should gets determined using this max_chunk_size within CudaCaller's determine_batch_dims and calculate_batch_dims,
+    where if I understood right, batch_size = max allowed of max_chunk_size chunks given gpu memory, in multiples of 32 for tx.
+    I'm thinking we can use batch_size * chunk_size (max_chunk_size) here to determine when a batch is filled for Tx VCS.
+    We know how much of allowed N * T we have filled through BatchedChunks' chunks_size right?
+    If adding the next chunk to current batch would make us go past N * T, then basecall_current_batch and repeat, if not, keep filling current batch
+    */
+
     const size_t batch_size = m_model_runners[worker_id]->batch_size();
     const size_t chunk_size = m_model_runners[worker_id]->chunk_size();
     const bool is_low_latency = m_model_runners[worker_id]->is_low_latency();
@@ -337,7 +348,8 @@ void BasecallerNode::basecall_worker_thread(int worker_id) {
 
         const bool is_full_batch = current_batch.chunks.size() == batch_size;
         const bool is_full_chunks_size = current_batch.chunks_size == max_worker_chunks_size;
-        if (m_variable_chunk_sizes ? is_full_chunks_size : is_full_batch) {
+        const bool is_full_batch_tx_vcs = current_batch.chunks_size > batch_size * chunk_size;
+        if (m_variable_chunk_sizes ? (m_is_tx_model ? is_full_batch_tx_vcs : is_full_chunks_size) : is_full_batch) {
             throw std::logic_error("Current batch is already full");
         }
 
@@ -406,30 +418,38 @@ void BasecallerNode::basecall_worker_thread(int worker_id) {
             }
 
             if (m_variable_chunk_sizes) {
-                // TODO: replace `stride` wit `chunk_size_granularity` here
-                size_t overhang = input_slice.size(1) % stride;
-                while (overhang != 0) {  // needed for input_slice.size(1) < (stride - overhang)
+                size_t min_working_unit = m_is_tx_model ? m_chunk_size_granularity : stride;
+                size_t overhang = input_slice.size(1) % min_working_unit;
+                while (overhang != 0) {  // needed for input_slice.size(1) < (min_working_unit - overhang)
                     input_slice =
                             at::concat({input_slice,
-                                        input_slice.index({Ellipsis, Slice(0, stride - overhang)})},
-                                       1);
-                    overhang = input_slice.size(1) % stride;
+                                        input_slice.index({Ellipsis, Slice(0, min_working_unit - overhang)})},
+                                    1);
+                    overhang = input_slice.size(1) % min_working_unit;
                 }
 
-                // TODO: change this for tx_model
-                const size_t slice_size = (input_slice.size(1) / stride) + 2;
-                if ((worker_chunks_size_part + slice_size) > max_worker_chunks_size_part) {
-                    current_batch.chunks_size += max_worker_chunks_size_part;
-                    worker_chunks_size_part = 0;
+                if (m_is_tx_model) {
+                    const size_t slice_size = input_slice.size(1);
+                    if ((current_batch.chunks_size + slice_size) > (batch_size * chunk_size)) {
+                        basecall_current_batch(current_batch);
+                    }
+                    current_batch.chunks_size += slice_size;
                 }
 
-                if (current_batch.chunks_size == max_worker_chunks_size) {
-                    // Input tensor can't accept any more chunks, so let's get_scores.
-                    basecall_current_batch(current_batch);
+                else {
+                    const size_t slice_size = (input_slice.size(1) / stride) + 2;
+                    if ((worker_chunks_size_part + slice_size) > max_worker_chunks_size_part) {
+                        current_batch.chunks_size += max_worker_chunks_size_part;
+                        worker_chunks_size_part = 0;
+                    }
+
+                    if (current_batch.chunks_size == max_worker_chunks_size) {
+                        // Input tensor can't accept any more chunks, so let's get_scores.
+                        basecall_current_batch(current_batch);
+                    }
+
+                    worker_chunks_size_part += slice_size;
                 }
-
-                worker_chunks_size_part += slice_size;
-
             } else {
                 // repeat-pad any non-full chunks
                 size_t slice_size = input_slice.size(1);
@@ -483,6 +503,8 @@ BasecallerNode::BasecallerNode(std::vector<basecall::RunnerPtr> model_runners,
           m_model_runners(std::move(model_runners)),
           m_overlap(overlap),
           m_model_stride(m_model_runners.front()->config().stride),
+          m_is_tx_model(m_model_runners.front()->config().is_tx_model()),
+          m_chunk_size_granularity(m_model_runners.front()->config().chunk_size_granularity()),
           m_is_rna_model(is_rna_model(m_model_runners.front()->config())),
           m_model_name(std::move(model_name)),
           m_mean_qscore_start_pos(read_mean_qscore_start_pos),

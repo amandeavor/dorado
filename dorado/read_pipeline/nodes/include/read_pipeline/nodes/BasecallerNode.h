@@ -66,6 +66,9 @@ private:
     const std::string m_model_name;
     // Mean Q-score start position from model properties.
     const uint32_t m_mean_qscore_start_pos;
+    // Transformer model flag
+    const bool m_is_tx_model;
+    const int m_chunksize_granularity;
 
     const bool m_variable_chunk_sizes;
 
