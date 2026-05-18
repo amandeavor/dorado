@@ -21,6 +21,9 @@ void mm_mapopt_override(mm_mapopt_t* mapopt) {
     // Force cigar generation.
     mapopt->flag |= MM_F_CIGAR;
 
+    // Always emit MD tags.
+    mapopt->flag |= MM_F_OUT_MD;
+
     // Equivalent to "--cap-kalloc 100m --cap-sw-mem 50m"
     mapopt->cap_kalloc = 100'000'000;
     mapopt->max_sw_mat = 50'000'000;
