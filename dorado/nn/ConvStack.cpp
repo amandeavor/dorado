@@ -108,11 +108,6 @@ TensorLayout get_koi_lstm_input_layout(const int layer_size,
 #endif
 
 ConvStackImpl::ConvStackImpl(const std::vector<config::ConvParams> &layer_params) {
-    // TODO: I'm sorry, where do I put these?
-    // num_working_blocks is hard_coded in Koi, that's how the kernels operate
-    // min_chunksize_per_layer is 768 (the original min_chunksize) divided by subsequent layer's stride
-    int num_working_blocks_per_min_chunksize_list[5] = {1, 3, 2, 1, 1};
-    int min_chunksize_per_layer[5] = {768, 768, 768, 256, 128};
     for (size_t i = 0; i < layer_params.size(); ++i) {
         auto &layer = layers.emplace_back(layer_params[i]);
         auto opts = torch::nn::Conv1dOptions(layer.params.insize, layer.params.size,
@@ -121,12 +116,14 @@ ConvStackImpl::ConvStackImpl(const std::vector<config::ConvParams> &layer_params
                             .padding(layer.params.winlen / 2);
         layer.conv = register_module(std::string("conv") + std::to_string(i + 1),
                                      torch::nn::Conv1d(opts));
+#if CUDA_DORADO_BUILD
+        // I can't instantiate conv_output here because Model creation happens before AuxiliaryData creation
         layer.conv_layer_num = i;
-        layer.num_working_blocks_per_min_chunksize = num_working_blocks_per_min_chunksize_list[i];
         // Last layer has default next_layer_padding = 0, intentionally, input to tx encoder is not padded
         if (i > 0) {
             layers[i-1].next_layer_padding = (layer.params.winlen / 2);
         }
+#endif  // DORADO_CUDA_BUILD
     }
 }
 
@@ -161,9 +158,9 @@ void ConvStackImpl::run_koi(WorkingMemory &wm, const AuxiliaryData *const aux) {
     }
 }
 
-at::Tensor ConvStackImpl::run_koi_vcs_conv(at::Tensor& x, AuxiliaryData const *aux) {
+at::Tensor ConvStackImpl::run_koi_vcs_tx(at::Tensor& x, AuxiliaryData const *aux) {
     for (auto &layer : layers) {
-        x = layer.run_koi_vcs_conv(x, aux);
+        x = layer.run_koi_vcs_tx(x, aux);
         aux->min_chunksize /= layer.params.stride;
     }
     return x;
@@ -377,8 +374,8 @@ void ConvStackImpl::ConvLayer::run_koi(WorkingMemory &wm, const AuxiliaryData *c
     }
 }
 
-at::Tensor ConvStackImpl::ConvLayer::run_koi_vcs_conv(at::Tensor &conv_input,
-                                                      const AuxiliaryData const *aux) {
+at::Tensor ConvStackImpl::ConvLayer::run_koi_vcs_tx(at::Tensor &conv_input,
+                                                    AuxiliaryData const *aux) {
     // Implementation supposes chunk_table remains unchanged since entering ConvStack
     // Eg: S | L            S = Start, L = Length
     //     0 | 768
@@ -392,14 +389,14 @@ at::Tensor ConvStackImpl::ConvLayer::run_koi_vcs_conv(at::Tensor &conv_input,
     auto opts_f16 = in.options().dtype(torch::kF16);
     auto opts_i32 = in.options().dtype(torch::kInt32);
 
-    const int padding = (params.winlen / 2);
+    const int winlen = params.winlen;
+    const int padding = (winlen / 2);
     const int C_in = params.insize;
     const int C_out = params.size;
-    const int winlen = params.winlen;
 
     if (!w_device.defined()) {
         // conv->weight is [C_out, C_in, W], we want [C_out, W, C_in] and then further tiling
-        w_device = conv->weight.transpose(1, 2).contiguous().to(opts);
+        w_device = conv->weight.transpose(1, 2).contiguous().to(opts_f16);
 
         // Special tiling for first Conv
         if (conv_layer_num == 0) {
@@ -411,27 +408,32 @@ at::Tensor ConvStackImpl::ConvLayer::run_koi_vcs_conv(at::Tensor &conv_input,
             w_device = w_device.view({C_out / SMEM_N, SMEM_N / 16, 2, 8, (winlen * C_in) / 16, 2, 8})
                                .permute({0, 4, 1, 2, 5, 3, 6}).contiguous();
         }
-        b_device = conv->bias.to(opts);
+        b_device = conv->bias.to(opts_f16);
     }
 
-    // Look-up tables and output tensor for this layer
-    koi_load_lut = torch::empty({aux->total_num_min_chunksize * num_working_blocks_per_min_chunksize}, opts_i32);
-    koi_store_lut = torch::empty({aux->total_num_min_chunksize * num_working_blocks_per_min_chunksize}, opts_i32);
-    int M_conv_in = (aux->total_num_min_chunksize * aux->min_chunksize) + ((aux->total_num_varlen_chunks + 1) * padding);
-    int M_conv_out = (aux->total_num_min_chunksize * (aux->min_chunksize / stride)) + ((aux->total_num_varlen_chunks + 1) * next_layer_padding);
-    conv_output = torch::empty({C_out / 8, M_conv_out, 8}, opts_f16);
+    if (!conv_output.defined()) {
+        // BasecallerNode.cpp adds varlen_chunks to batch so that varlen_chunks + max_padding_in_ConvLayers does not exceed batch_size * chunk_size
+        // So it's safe to instantiate output tensors with M dimension = batch_size * chunk_size, even if actual input is less than that,
+        // the final excessive M rows won't get filled this layer, nor loaded next layer, they just never get touched. HOWEVER, they are still needed 
+        // so we have fixed M throughout layers and batches! This way, we just instantiate conv_output once per ConvLayer, and re-use it for all batches!
+        // All of this so Torch doesn't reallocate output tensors with every batch, consuming all of GPU Mem.
+
+        M_max = aux->N() * aux->T_in(); // aux->N() and aux->T_in() should NOT change throughout entire basecalling
+                                        // Once determined by CudaCaller.cpp, should stay the same until the end of basecalling
+        conv_output = torch::empty(({C_out / 8, M_max, 8}), opts_f16);  // Doesn't really need to be in Koi Layout, BUT, if you decide to change it,
+                                                                        // you must also change TxModules.cpp, as it gets C from THIS layout!
+    }
 
     koi_vcs_sup_fill_conv_load_store_lut(
         stream_ptr,
-        total_num_varlen_chunks,
+        aux->total_num_granularity,
         aux->chunk_table.data_ptr(),
-        koi_load_lut.data_ptr(),
-        koi_store_lut.data_ptr(),
-        conv_layer_num + 1,
+        aux->conv_load_lut.data_ptr(),  // Load and Store LUTs make sense for them to be in AuxiliaryData.h, as their
+        aux->conv_store_lut.data_ptr(), // shape depend on total_num_granularity, which can changes between batches
         conv_input.data_ptr(),
-        M_koi_conv_in,
-        num_working_blocks_per_min_chunksize,
-        aux->min_chunksize,
+        M_max,
+        C_in,
+        aux->chunk_size_granularity,    // This value gets updated according to ConvLayers stride in ConvStackImpl::run_koi_vcs_tx
         stride,
         padding,
         next_layer_padding
@@ -444,10 +446,10 @@ at::Tensor ConvStackImpl::ConvLayer::run_koi_vcs_conv(at::Tensor &conv_input,
             w_device.data_ptr(),
             conv_output.data_ptr(),
             w_bias.data_ptr(),
-            koi_load_lut.data_ptr(),
-            koi_store_lut.data_ptr(),
-            aux->total_num_min_chunksize * num_working_blocks_per_min_chunksize,
-            M_conv_out
+            aux->conv_load_lut.data_ptr(),
+            aux->conv_store_lut.data_ptr(),
+            aux->total_num_granularity,
+            M_max   // M dimension of output tensor
         );
     }
     else {
@@ -457,12 +459,16 @@ at::Tensor ConvStackImpl::ConvLayer::run_koi_vcs_conv(at::Tensor &conv_input,
             w_device.data_ptr(),
             conv_output.data_ptr(),
             w_bias.data_ptr(),
-            koi_load_lut.data_ptr(),
-            koi_store_lut.data_ptr(),
-            aux->total_num_min_chunksize * num_working_blocks_per_min_chunksize,
-            conv_layer_num + 1, // +1 because Koi is implemented with Conv1, Conv2, Conv3 etc maybe should change that, but Im not calling next layers' conv layer
-            M_conv_in,
-            M_conv_out
+            aux->conv_load_lut.data_ptr(),
+            aux->conv_store_lut.data_ptr(),
+            aux->total_num_granularity,
+            M_max,              // M dimension of input tensor
+            M_max               // M dimension of output tensor, both same given VCS Tx strategy!
+            winlen,
+            C_in,
+            C_out,
+            padding,
+            stride
         );
     }
 

@@ -127,8 +127,6 @@ struct TxEncoderStackImpl : torch::nn::Module {
     bool use_vcs{false};
     torch::nn::Sequential stack{nullptr};
     std::vector<TxEncoder> layer_vec;
-    at::Tensor qkv_rope_lut;
-    at::Tensor attn_lut;
 };
 
 TORCH_MODULE(TxEncoderStack);

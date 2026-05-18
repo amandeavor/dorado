@@ -156,6 +156,7 @@ struct BasecallModelConfig {
         basecaller.normalise(chunk_size_granularity(), stride_inner());
     }
 
+    // This is fine as long as chunk_size_granularity() is a multiple of non-VCS chunk_size
     int chunk_size_granularity() const { return stride_inner() * (is_tx_model() ? 64 : 1); }
 
     // True if `chunk_size` is greater than `overlap` and evenly divisible by

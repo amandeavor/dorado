@@ -21,10 +21,13 @@ at::Tensor TxModelImpl::forward(const at::Tensor &input, nn::AuxiliaryData const
     at::Tensor h;
     {
         utils::ScopedProfileRange spr("Conv", 1);
-        if (aux->chunk_table.defined()) {
+#if DORADO_CUDA_BUILD
+        if (aux && aux->chunk_table.defined()) {
             h = convs->run_koi_vcs_conv(input, aux);
         }
-        else {
+        else
+#endif
+        {
             // If non-VCS, input is NCT layout
             // Returns: NTC layout
             h = convs->forward(input);

@@ -128,17 +128,10 @@ std::vector<std::pair<std::size_t, std::size_t>> generate_variable_chunks_tx(con
                                std::to_string(overlap) + " and stride " + std::to_string(stride) +
                                " and chunk_size_granularity " + std::to_string(chunk_size_granularity));
     }
-    // If overlap was not a multiple of chunk_size_granularity, reads that start at an overlap offset
-    // would get padded to chunk_size_granularity within BasecallerNode::basecall_worker_thread
-    if (((overlap % stride) != 0) || ((overlap % chunk_size_granularity) != 0)) {
+    if ((overlap % stride) != 0) {
         throw std::logic_error("utils::generate_chunks: invalid overlap " +
-                               std::to_string(overlap) + " with stride " + std::to_string(stride) + 
-                               " with chunk_size_granularity " + std::to_string(chunk_size_granularity));
+                               std::to_string(overlap) + " with stride " + std::to_string(stride));
     }
-
-    // max_chunk_size is a multiple of stride and chunk_size_granularity, checked above
-    // overlap is a multiple of stride and chunk_size_granularity, checked above
-    // So chunk_step is a multiple of stride and chunk_size_granularity
 
     std::vector<std::pair<std::size_t, std::size_t>> intervals;
     std::size_t offset = 0;

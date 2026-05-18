@@ -35,6 +35,7 @@ public:
 
     void create_lstm_auxiliary_data(const c10::Device &device, KoiThreads &thread_pool);
     void create_shared_auxiliary_data(const c10::Device &device);
+    void create_tx_auxiliary_data(const c10::Device &device)
 
     at::Tensor device_in_layout;
     at::Tensor device_out_layout;
@@ -44,7 +45,11 @@ public:
     std::span<const std::int32_t> chunk_sizes() const { return chunk_sizes_; }
 
     at::Tensor device_chunk_intervals;
+    // ! Need to make sure device_chunk_table is used in Decoder !
     at::Tensor device_chunk_table;  // Torch Tensor of shape (total_num_varlen_chunks, 2). Column 0 is chunk start. Column 1 is chunk_length
+    at::Tensor conv_load_lut;       // Torch Tensor of shape total_num_granularity
+    at::Tensor conv_store_lut;      // Torch Tensor of shape total_num_granularity
+    at::Tensor qkv_rope_lut;
     int chunk_size_granularity;  // This should be chunk_size_granularity() from BasecallModelConfig.h
     int total_num_granularity;    // This is entire input length divided by chunk_size_granularity
     int total_num_varlen_chunks;  // Amount of varlen chunks in batch

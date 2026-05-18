@@ -69,11 +69,14 @@ std::unique_ptr<nn::AuxiliaryData> create_empty_input(at::Tensor &in,
     workspace = torch::empty({6 * ((T / stride) + 3) * N}, workspace_options);
     auto aux = std::make_unique<nn::AuxiliaryData>(workspace, N, T, stride, chunk_size_granularity,
                                                    std::vector<std::int32_t>(N, T));
+    aux->create_shared_auxiliary_data(m_options.device());  // sync copy
     if (m_config.is_lstm_model()) {
         aux->create_lstm_auxiliary_data(m_options.device(),
                                         m_thread_pool);  // CPU work + async copy
     }
-    aux->create_shared_auxiliary_data(m_options.device());  // sync copy
+    else {
+        aux->create_tx_auxiliary_data(m_options.device());
+    }
     return aux;
 }
 
@@ -253,11 +256,14 @@ std::vector<decode::DecodedChunk> CudaCaller::call_chunks(at::Tensor &input,
     at::Tensor device_input = input.to(m_options.device());  // async copy
 
     if (aux) {
+        aux->create_shared_auxiliary_data(m_options.device());  // sync copy
         if (m_config.is_lstm_model()) {
             aux->create_lstm_auxiliary_data(m_options.device(),
                                             m_thread_pool);  // CPU work + async copy
         }
-        aux->create_shared_auxiliary_data(m_options.device());  // sync copy
+        else {
+            aux->create_tx_auxiliary_data(m_options.device());
+        }
     }
 
     auto &task_queue = get_task_queue();

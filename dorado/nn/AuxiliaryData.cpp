@@ -39,7 +39,7 @@ AuxiliaryData::AuxiliaryData(at::Tensor workspace,
     chunk_intervals_.resize(2 * total_num_varlen_chunks);
     int i = 0;
     total_num_granularity = 0;
-    for (std::int32_t& cs : chunk_sizes) {
+    for (const std::int32_t& cs : chunk_sizes) {
         int cs_blocks = cs / chunk_size_granularity;
         chunk_table_[(2 * i) + 0] = total_num_granularity;
         chunk_table_[(2 * i) + 1] = cs_blocks;
@@ -71,12 +71,12 @@ void AuxiliaryData::create_lstm_auxiliary_data([[maybe_unused]] const at::Device
     auto options = at::TensorOptions().device(device).dtype(at::kInt);
     auto stream = c10::cuda::getCurrentCUDAStream(device.index());
 
+    const std::int32_t chunk_sum =
+            std::accumulate(std::cbegin(chunk_sizes_), std::cend(chunk_sizes_), 0);
+
     device_chunk_intervals =
             at::from_blob(std::data(chunk_intervals_),
                           {static_cast<std::int32_t>(std::size(chunk_intervals_))}, options);
-
-    const std::int32_t chunk_sum =
-            std::accumulate(std::cbegin(chunk_sizes_), std::cend(chunk_sizes_), 0);
 
     device_in_layout = at::empty({chunk_sum}, options);
     device_out_layout = at::empty({N_ * (T_lstm_ + 1)}, options);
@@ -109,6 +109,27 @@ void AuxiliaryData::create_shared_auxiliary_data([[maybe_unused]] const at::Devi
     device_chunk_table = at::from_blob(std::data(chunk_table_),
                                        {static_cast<std::int32_t>(std::size(chunk_table_))},
                                        at::TensorOptions().device(device).dtype(at::kInt));
+#else
+    throw std::runtime_error("AuxiliaryData error: unsupported code path!");
+#endif
+}
+
+void AuxiliaryData::create_tx_auxiliary_data([[maybe_unused]] const at::Device& device) {
+#if DORADO_CUDA_BUILD
+    if (conv_load_lut.defined() || conv_store_lut.defined() || qkv_rope_lut.defined()) {
+        return;
+    }
+
+    auto i32_opts = at::TensorOptions().device(device).dtype(at::kInt32);
+    conv_load_lut = at::empty({total_num_granularity}, i32_opts);
+    conv_store_lut = at::empty({total_num_granularity}, i32_opts);
+    qkv_rope_lut = at::empty({total_num_granularity}, i32_opts);
+
+    // conv_load_lut and conv_store_lut get used on every ConvLayer
+    // qkv_rope_lut does get filled once for a given batch, but its doesn't get filled here
+    // because it would involve hardcoding TxEncoder granularity here, which wouldn't be
+    // the end of the world tbh but decided to fill qkv_rope_lut in TxModules.cpp
+
 #else
     throw std::runtime_error("AuxiliaryData error: unsupported code path!");
 #endif
