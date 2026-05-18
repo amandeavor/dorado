@@ -538,9 +538,11 @@ std::vector<AlignmentResult> Minimap2Aligner::align_impl(dorado::ReadCommon& rea
     query.name = const_cast<char*>(read_common.read_id.c_str());
     query.l_seq = static_cast<int>(read_common.seq.length());
 
+    const auto& map_opts = m_minimap_index->mapping_options();
+
     int n_regs{};
     mm_reg1_t* regs = mm_map(m_minimap_index->index(idx_no), query.l_seq, query.seq, &n_regs,
-                             buffer, &m_minimap_index->mapping_options(), nullptr);
+                             buffer, &map_opts, nullptr);
     auto post_condition = utils::PostCondition([regs, n_regs] {
         for (int reg_idx = 0; reg_idx < n_regs; ++reg_idx) {
             free(regs[reg_idx].p);
@@ -556,10 +558,12 @@ std::vector<AlignmentResult> Minimap2Aligner::align_impl(dorado::ReadCommon& rea
     if (n_regs == 0) {
         alignment_string = read_common.read_id + UNMAPPED_SAM_LINE_STRIPPED;
     }
+
+    auto index = m_minimap_index->index(idx_no);
     for (int reg_idx = 0; reg_idx < n_regs; ++reg_idx) {
         kstring_t alignment_line{0, 0, nullptr};
-        mm_write_sam3(&alignment_line, m_minimap_index->index(idx_no), &query, 0, reg_idx, 1,
-                      &n_regs, &regs, NULL, MM_F_OUT_MD, buffer->rep_len);
+        mm_write_sam3(&alignment_line, index, &query, 0, reg_idx, 1, &n_regs, &regs, NULL,
+                      map_opts.flag, buffer->rep_len);
         alignment_string += std::string(alignment_line.s, alignment_line.l) + "\n";
         free(alignment_line.s);
     }
@@ -577,6 +581,9 @@ void Minimap2Aligner::add_tags(bam1_t* record,
                                const std::string& seq,
                                const mm_tbuf_t* buf,
                                int idx_no) {
+    auto* const index = m_minimap_index->index(idx_no);
+    const auto& mapping_options = m_minimap_index->mapping_options();
+
     if (aln->p) {
         // NM
         int32_t nm = aln->blen - aln->mlen + aln->p->n_ambi;
@@ -630,13 +637,15 @@ void Minimap2Aligner::add_tags(bam1_t* record,
     }
 
     // MD
-    char* md = NULL;
-    int max_len = 0;
-    int md_len = mm_gen_MD(NULL, &md, &max_len, m_minimap_index->index(idx_no), aln, seq.c_str());
-    if (md_len > 0) {
-        bam_aux_append(record, "MD", 'Z', md_len + 1, (uint8_t*)md);
+    if (mapping_options.flag & MM_F_OUT_MD) {
+        char* md = nullptr;
+        int max_len = 0;
+        int md_len = mm_gen_MD(nullptr, &md, &max_len, index, aln, seq.c_str());
+        if (md_len > 0) {
+            bam_aux_append(record, "MD", 'Z', md_len + 1, reinterpret_cast<uint8_t*>(md));
+        }
+        free(md);
     }
-    free(md);
 
     // zd
     if (aln->split) {
