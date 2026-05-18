@@ -127,6 +127,7 @@ void add_arguments(argparse::ArgumentParser& parser) {
             .default_value(std::string{DEFAULT_MM_PRESET});
 
     parser.add_argument("--eqx").help("write =/X CIGAR operators").flag();
+    parser.add_argument("--MD").help("output the MD tag (no-op since we do by default)").flag();
 
     parser.add_argument("--secondary-seq")
             .hidden()
