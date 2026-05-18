@@ -680,3 +680,57 @@ CATCH_TEST_CASE_METHOD(
     CATCH_CHECK_THAT(bam_aux2Z(bam_aux_get(supplementary_rec, "SA")),
                      Equals("read3,1,+,999M899S,0,0;"));
 }
+
+CATCH_TEST_CASE_METHOD(AlignerNodeTestFixture, "AlignerTest: Check CS tag", TEST_GROUP) {
+    enum class CSFlag { NotSet, None, Short, Long };
+    const auto cs_flag = GENERATE(CSFlag::NotSet, CSFlag::None, CSFlag::Short, CSFlag::Long);
+    CATCH_CAPTURE(cs_flag);
+
+    // Default preset + --cs flag.
+    std::string mm_options;
+    {
+        mm_options += "-x ";
+        mm_options += dorado::alignment::DEFAULT_MM_PRESET;
+        switch (cs_flag) {
+        case CSFlag::NotSet:
+            break;
+        case CSFlag::None:
+            mm_options += " --cs none";
+            break;
+        case CSFlag::Short:
+            mm_options += " --cs short";
+            break;
+        case CSFlag::Long:
+            mm_options += " --cs long";
+            break;
+        }
+    }
+    const auto options = dorado::alignment::mm2::parse_options(mm_options);
+
+    // Align a sequence to itself.
+    const auto query = get_aligner_data_dir() / "target.fq";
+    dorado::TestHtsReader reader(query.string());
+    const auto bam_records = RunPipelineWithBamMessages(reader, query.string(), {}, options, 1);
+
+    // Grab the alignment result.
+    CATCH_REQUIRE(bam_records.size() == 1);
+    bam1_t* rec = bam_records[0].get();
+    const auto sequence = dorado::utils::extract_sequence(rec);
+
+    // Check the cs tag.
+    const auto cs_tag = bam_aux_get(rec, "cs");
+    switch (cs_flag) {
+    case CSFlag::NotSet:
+    case CSFlag::None:
+        CATCH_CHECK(cs_tag == nullptr);
+        break;
+    case CSFlag::Short:
+        CATCH_REQUIRE(cs_tag != nullptr);
+        CATCH_CHECK_THAT(bam_aux2Z(cs_tag), Equals(":" + std::to_string(sequence.size())));
+        break;
+    case CSFlag::Long:
+        CATCH_REQUIRE(cs_tag != nullptr);
+        CATCH_CHECK_THAT(bam_aux2Z(cs_tag), Equals("=" + sequence));
+        break;
+    }
+}

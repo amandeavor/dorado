@@ -128,6 +128,7 @@ void add_arguments(argparse::ArgumentParser& parser) {
 
     parser.add_argument("--eqx").help("write =/X CIGAR operators").flag();
     parser.add_argument("--MD").help("output the MD tag (no-op since we do by default)").flag();
+    parser.add_argument("--cs").help("output the cs tag (none, short, long)");
 
     parser.add_argument("--secondary-seq")
             .hidden()
@@ -236,6 +237,10 @@ std::optional<Minimap2Options> process_arguments(const argparse::ArgumentParser&
     if (parser.get<bool>("print-aln-seq")) {
         // set the global flags
         mm_dbg_flag |= MM_DBG_PRINT_QNAME | MM_DBG_PRINT_ALN_SEQ;
+    }
+
+    if (auto cs = parser.present("cs"); cs.has_value()) {
+        apply_cs_option(res, cs.value());
     }
 
     return res;

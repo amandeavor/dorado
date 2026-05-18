@@ -647,6 +647,18 @@ void Minimap2Aligner::add_tags(bam1_t* record,
         free(md);
     }
 
+    // cs
+    if (mapping_options.flag & MM_F_OUT_CS) {
+        char* cs = nullptr;
+        int max_len = 0;
+        bool no_iden = !(mapping_options.flag & MM_F_OUT_CS_LONG);
+        int cs_len = mm_gen_cs(nullptr, &cs, &max_len, index, aln, seq.c_str(), no_iden);
+        if (cs_len > 0) {
+            bam_aux_append(record, "cs", 'Z', cs_len + 1, reinterpret_cast<uint8_t*>(cs));
+        }
+        free(cs);
+    }
+
     // zd
     if (aln->split) {
         uint32_t split = uint32_t(aln->split);
