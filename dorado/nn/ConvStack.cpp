@@ -116,7 +116,7 @@ ConvStackImpl::ConvStackImpl(const std::vector<config::ConvParams> &layer_params
                             .padding(layer.params.winlen / 2);
         layer.conv = register_module(std::string("conv") + std::to_string(i + 1),
                                      torch::nn::Conv1d(opts));
-#if CUDA_DORADO_BUILD
+#if DORADO_CUDA_BUILD
         // I can't instantiate conv_output here because Model creation happens before AuxiliaryData creation
         layer.conv_layer_num = i;
         // Last layer has default next_layer_padding = 0, intentionally, input to tx encoder is not padded
@@ -158,10 +158,11 @@ void ConvStackImpl::run_koi(WorkingMemory &wm, const AuxiliaryData *const aux) {
     }
 }
 
-at::Tensor ConvStackImpl::run_koi_vcs_tx(at::Tensor& x, AuxiliaryData const *aux) {
+// Should tensor be passed in by reference? All it does is pass the handle right?
+at::Tensor ConvStackImpl::run_koi_vcs_tx(at::Tensor x, AuxiliaryData *aux) {
     for (auto &layer : layers) {
         x = layer.run_koi_vcs_tx(x, aux);
-        aux->min_chunksize /= layer.params.stride;
+        aux->chunk_size_granularity /= layer.params.stride;
     }
     return x;
 }
@@ -375,7 +376,7 @@ void ConvStackImpl::ConvLayer::run_koi(WorkingMemory &wm, const AuxiliaryData *c
 }
 
 at::Tensor ConvStackImpl::ConvLayer::run_koi_vcs_tx(at::Tensor &conv_input,
-                                                    AuxiliaryData const *aux) {
+                                                    AuxiliaryData *aux) {
     // Implementation supposes chunk_table remains unchanged since entering ConvStack
     // Eg: S | L            S = Start, L = Length
     //     0 | 768
@@ -386,13 +387,13 @@ at::Tensor ConvStackImpl::ConvLayer::run_koi_vcs_tx(at::Tensor &conv_input,
 
     auto stream = at::cuda::getCurrentCUDAStream().stream();
     utils::ScopedProfileRange spr("conv", 2);
-    auto opts_f16 = in.options().dtype(torch::kF16);
-    auto opts_i32 = in.options().dtype(torch::kInt32);
+    auto opts_f16 = conv_input.options().dtype(torch::kF16);
 
     const int winlen = params.winlen;
     const int padding = (winlen / 2);
     const int C_in = params.insize;
     const int C_out = params.size;
+    const int stride = params.stride;
 
     if (!w_device.defined()) {
         // conv->weight is [C_out, C_in, W], we want [C_out, W, C_in] and then further tiling
@@ -420,18 +421,18 @@ at::Tensor ConvStackImpl::ConvLayer::run_koi_vcs_tx(at::Tensor &conv_input,
 
         M_max = aux->N() * aux->T_in(); // aux->N() and aux->T_in() should NOT change throughout entire basecalling
                                         // Once determined by CudaCaller.cpp, should stay the same until the end of basecalling
-        conv_output = torch::empty(({C_out / 8, M_max, 8}), opts_f16);  // Doesn't really need to be in Koi Layout, BUT, if you decide to change it,
+        conv_output = torch::empty({C_out / 8, M_max, 8}, opts_f16);    // Doesn't really need to be in Koi Layout, BUT, if you decide to change it,
                                                                         // you must also change TxModules.cpp, as it gets C from THIS layout!
     }
 
     koi_vcs_sup_fill_conv_load_store_lut(
-        stream_ptr,
-        aux->total_num_granularity,
-        aux->chunk_table.data_ptr(),
-        aux->conv_load_lut.data_ptr(),  // Load and Store LUTs make sense for them to be in AuxiliaryData.h, as their
-        aux->conv_store_lut.data_ptr(), // shape depend on total_num_granularity, which can changes between batches
-        conv_input.data_ptr(),
-        M_max,
+        stream,
+        aux->total_num_granularity,     // ! This should be aux->total_num_varlen_chunks
+        aux->device_chunk_table.data_ptr<int>(),
+        aux->conv_load_lut.data_ptr<int>(),  // Load and Store LUTs make sense for them to be in AuxiliaryData.h, as their
+        aux->conv_store_lut.data_ptr<int>(), // shape depend on total_num_granularity, which can changes between batches
+        conv_layer_num == 0 ? nullptr : conv_input.data_ptr(),  // ? Input to Conv1 is already padded from BaseCallerNode ?
+        conv_layer_num == 0 ? 0 : M_max,                          // This does not get used for conv1
         C_in,
         aux->chunk_size_granularity,    // This value gets updated according to ConvLayers stride in ConvStackImpl::run_koi_vcs_tx
         stride,
@@ -445,9 +446,9 @@ at::Tensor ConvStackImpl::ConvLayer::run_koi_vcs_tx(at::Tensor &conv_input,
             conv_input.data_ptr(),
             w_device.data_ptr(),
             conv_output.data_ptr(),
-            w_bias.data_ptr(),
-            aux->conv_load_lut.data_ptr(),
-            aux->conv_store_lut.data_ptr(),
+            b_device.data_ptr(),
+            aux->conv_load_lut.data_ptr<int>(),
+            aux->conv_store_lut.data_ptr<int>(),
             aux->total_num_granularity,
             M_max   // M dimension of output tensor
         );
@@ -458,12 +459,12 @@ at::Tensor ConvStackImpl::ConvLayer::run_koi_vcs_tx(at::Tensor &conv_input,
             conv_input.data_ptr(),
             w_device.data_ptr(),
             conv_output.data_ptr(),
-            w_bias.data_ptr(),
-            aux->conv_load_lut.data_ptr(),
-            aux->conv_store_lut.data_ptr(),
+            b_device.data_ptr(),
+            aux->conv_load_lut.data_ptr<int>(),
+            aux->conv_store_lut.data_ptr<int>(),
             aux->total_num_granularity,
             M_max,              // M dimension of input tensor
-            M_max               // M dimension of output tensor, both same given VCS Tx strategy!
+            M_max,               // M dimension of output tensor, both same given VCS Tx strategy!
             winlen,
             C_in,
             C_out,

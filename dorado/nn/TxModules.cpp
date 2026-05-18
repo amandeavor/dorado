@@ -413,8 +413,8 @@ void TxEncoderImpl::remove_bits() {
 }
 #endif
 
-void TxEncoderImpl::koi_forward(utils::ScaledTensor &scaled_tensor, at::Tensor &x_f16
-                                [[maybe_unused]] AuxiliaryData const* aux) {
+void TxEncoderImpl::koi_forward(utils::ScaledTensor &scaled_tensor, at::Tensor &x_f16,
+                                [[maybe_unused]] AuxiliaryData *aux) {
     (void)scaled_tensor;
     (void)x_f16;
 #if DORADO_CUDA_BUILD
@@ -553,20 +553,28 @@ void TxEncoderImpl::koi_forward(utils::ScaledTensor &scaled_tensor, at::Tensor &
     if (res == KOI_SUCCESS && ++calls) {
         // Fused QKV Matmul Plus Rotary embedding
         utils::ScopedProfileRange spr("QKV+ROTE", 3);
-        if (aux && aux->qkv_rope_lut.is_defined()) {
-            res = koi_qkv_rotary(stream, &in, &weights_qkv, &sincos, &out_qkv,
-                             aux->qkv_rope_lut.data_ptr<int>(), ctr[0].data_ptr<int>());
+        if (aux && aux->qkv_rope_lut.defined()) {
+            // ! TO CHANGE
+            res = koi_qkv_rotary(stream, 0.f, &in, &weights_qkv, &sincos, &out_qkv,
+                             ctr[0].data_ptr<int>());
+
+            // res = koi_qkv_rotary(stream, &in, &weights_qkv, &sincos, &out_qkv,
+            //                  aux->qkv_rope_lut.data_ptr<int>(), ctr[0].data_ptr<int>());
         } else {
-            res = koi_qkv_rotary(stream, &in, &weights_qkv, &sincos, &out_qkv,
-                             nullptr, ctr[0].data_ptr<int>());
+            // ! TO CHANGE
+            res = koi_qkv_rotary(stream, 0.f, &in, &weights_qkv, &sincos, &out_qkv,
+                             ctr[0].data_ptr<int>());
+
+            // res = koi_qkv_rotary(stream, &in, &weights_qkv, &sincos, &out_qkv,
+            //                  aux->qkv_rope_lut.data_ptr<int>(), ctr[0].data_ptr<int>());
         }
     }
     if (res == KOI_SUCCESS && ++calls) {
         // Apply masket attention
         utils::ScopedProfileRange spr("MEA", 3);
-        if (aux && aux->device_chunk_table.is_defined()) {
+        if (aux && aux->device_chunk_table.defined()) {
             // attn_lut is genuinely just AuxiliaryData's device_chunk_table
-            res = koi_vcs_attn(stream, qkv.data_ptr(), aux->device_chunk_table.data_ptr(), aux->device_chunk_table.size(0), t_out_attn.data_ptr());
+            res = koi_vcs_attn(stream, qkv.data_ptr(), aux->device_chunk_table.data_ptr<int>(), aux->device_chunk_table.size(0), t_out_attn.data_ptr());
         }
         else {
             res = koi_masked_attention(stream, win_upper, win_lower, &out_qkv, &out_attn);
@@ -834,7 +842,7 @@ TxEncoderStackImpl::TxEncoderStackImpl(const TxEncoderParams &params,
     use_i8 = utils::get_dev_opt<bool>("koi_use_i8", true);
 };
 
-at::Tensor TxEncoderStackImpl::forward(const at::Tensor &x, [[maybe_unused]] const AuxiliaryData const *aux) {
+at::Tensor TxEncoderStackImpl::forward(const at::Tensor &x, [[maybe_unused]] AuxiliaryData *aux) {
 #if DORADO_CUDA_BUILD
     if (use_koi_tiled) {
         int N, T, C;
@@ -857,16 +865,17 @@ at::Tensor TxEncoderStackImpl::forward(const at::Tensor &x, [[maybe_unused]] con
             utils::ScopedProfileRange spr("Tile F16", 2);
             if (use_vcs) {
                 // Underlying input layout is (C / 8, M_in, 8)
-                tiled_f16 = x.view({C / 8, N, T / 16, 16, 8}).permute(1, 2, 0, 3, 4).contiguous();
+                tiled_f16 = x.view({C / 8, N, T / 16, 16, 8}).permute({1, 2, 0, 3, 4}).contiguous();
 
                 // Fill qkv_rope_lut that get used on all TxEncoder layers
                 // No need to fill attn_lut as is just aux->device_chunk_table
+                auto stream = at::cuda::getCurrentCUDAStream().stream();
                 koi_vcs_sup_fill_qkv_rope_lut(
-                    stream_ptr,
+                    stream,
                     aux->total_num_varlen_chunks,
                     T,
-                    aux->device_chunk_table.data_ptr(),
-                    aux->qkv_rope_lut.data_ptr()
+                    aux->device_chunk_table.data_ptr<int>(),
+                    aux->qkv_rope_lut.data_ptr<int>()
                 );
             }
             else {

@@ -316,9 +316,9 @@ void BasecallerNode::basecall_worker_thread(int worker_id) {
     const bool is_low_latency = m_model_runners[worker_id]->is_low_latency();
     const int chunk_queue_idx = worker_id % int(m_chunk_in_queues.size());
     auto &chunk_in_queue = *m_chunk_in_queues[chunk_queue_idx];
-    const int max_conv_padding = -1;
+    int max_conv_padding = -1;
     for (auto conv_layer : m_model_runners[worker_id]->config().convs) {
-        max_conv_padding = std::max(max_conv_padding, conv_layer->winlen / 2);
+        max_conv_padding = std::max(max_conv_padding, conv_layer.winlen / 2);
     }
 
     const size_t stride = m_model_runners[worker_id]->config().stride;
@@ -442,12 +442,12 @@ void BasecallerNode::basecall_worker_thread(int worker_id) {
 
                 if (m_is_tx_model) {
                     const size_t slice_size = input_slice.size(1);
-                    if ((current_batch.chunks_size + slice_size + first_conv_padding) > (batch_size * chunk_size)) {
+                    if ((current_batch.chunks_size + slice_size + max_conv_padding) > (batch_size * chunk_size)) {
                         basecall_current_batch(current_batch);
                         // Add initial padding to chunks_size before filling up new batch
-                        current_batch.chunks_size = first_conv_padding;
+                        current_batch.chunks_size = max_conv_padding;
                     }
-                    current_batch.chunks_size += slice_size + first_conv_padding;
+                    current_batch.chunks_size += slice_size + max_conv_padding;
                 }
 
                 else {
@@ -517,11 +517,11 @@ BasecallerNode::BasecallerNode(std::vector<basecall::RunnerPtr> model_runners,
           m_model_runners(std::move(model_runners)),
           m_overlap(overlap),
           m_model_stride(m_model_runners.front()->config().stride),
-          m_is_tx_model(m_model_runners.front()->config().is_tx_model()),
-          m_chunk_size_granularity(m_model_runners.front()->config().chunk_size_granularity()),
           m_is_rna_model(is_rna_model(m_model_runners.front()->config())),
           m_model_name(std::move(model_name)),
           m_mean_qscore_start_pos(read_mean_qscore_start_pos),
+          m_is_tx_model(m_model_runners.front()->config().is_tx_model()),
+          m_chunk_size_granularity(m_model_runners.front()->config().chunk_size_granularity()),
           m_variable_chunk_sizes(m_model_runners.front()->variable_chunk_sizes()),
           m_processed_chunks(CalcMaxChunksIn(m_model_runners)),
           m_node_name(std::move(node_name)) {

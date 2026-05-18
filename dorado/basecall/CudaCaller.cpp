@@ -61,6 +61,7 @@ std::unique_ptr<nn::AuxiliaryData> create_empty_input(at::Tensor &in,
                                                       const std::int32_t C,
                                                       const std::int32_t stride,
                                                       const std::int32_t chunk_size_granularity,
+                                                      const bool is_lstm_model,
                                                       nn::KoiThreads &thread_pool) {
     in = torch::empty({1, C, N * T}, in_options);
     auto workspace_options =
@@ -69,13 +70,13 @@ std::unique_ptr<nn::AuxiliaryData> create_empty_input(at::Tensor &in,
     workspace = torch::empty({6 * ((T / stride) + 3) * N}, workspace_options);
     auto aux = std::make_unique<nn::AuxiliaryData>(workspace, N, T, stride, chunk_size_granularity,
                                                    std::vector<std::int32_t>(N, T));
-    aux->create_shared_auxiliary_data(m_options.device());  // sync copy
-    if (m_config.is_lstm_model()) {
-        aux->create_lstm_auxiliary_data(m_options.device(),
-                                        m_thread_pool);  // CPU work + async copy
+    aux->create_shared_auxiliary_data(in_options.device());  // sync copy
+    if (is_lstm_model) {
+        aux->create_lstm_auxiliary_data(in_options.device(),
+                                        thread_pool);  // CPU work + async copy
     }
     else {
-        aux->create_tx_auxiliary_data(m_options.device());
+        aux->create_tx_auxiliary_data(in_options.device());
     }
     return aux;
 }
@@ -164,7 +165,7 @@ CudaCaller::CudaCaller(const BasecallerCreationParams &params)
         if (m_variable_chunk_sizes) {
             aux = create_empty_input(input, m_options, workspace, batch_dim.N, batch_dim.T_in,
                                      m_num_input_features, m_config.stride,
-                                     m_config.chunk_size_granularity(), m_thread_pool);
+                                     m_config.chunk_size_granularity(), m_config.is_lstm_model(), m_thread_pool);
         } else {
             input = torch::empty({batch_dim.N, m_num_input_features, batch_dim.T_in}, m_options);
         }
@@ -436,7 +437,7 @@ CudaCaller::BatchDimsAndMaxSizes CudaCaller::calculate_batch_sizes(
 
     // ? Creation of shorter chunk size queue should be skipped for VCS Tx right ?
     if (pipeline_type == PipelineType::simplex &&
-        !(model_config.is_tx_model() && m_variable_chunk_sizes)) {
+        !(model_config.is_tx_model() && chunk_granularity)) {
         const char *env_extra_chunk_sizes = std::getenv("DORADO_EXTRA_CHUNK_SIZES");
         if (env_extra_chunk_sizes != nullptr) {
             constexpr char SEPARATOR = ';';
@@ -579,7 +580,7 @@ void CudaCaller::determine_batch_dims(const BasecallerCreationParams &params) {
             if (m_variable_chunk_sizes) {
                 aux = create_empty_input(input, m_options, workspace, batch_size, chunk_size,
                                          m_config.num_features, stride, chunk_granularity,
-                                         m_thread_pool);
+                                         m_config.is_lstm_model(), m_thread_pool);
             } else {
                 input = torch::empty({batch_size, m_config.num_features, chunk_size}, m_options);
             }

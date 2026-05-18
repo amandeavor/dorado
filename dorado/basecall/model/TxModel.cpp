@@ -17,13 +17,13 @@ TxModelImpl::TxModelImpl(const config::BasecallModelConfig &config,
     crf = register_module("crf", nn::LinearScaledCRF(config.tx->crf));
 }
 
-at::Tensor TxModelImpl::forward(const at::Tensor &input, nn::AuxiliaryData const* aux) {
+at::Tensor TxModelImpl::forward(const at::Tensor &input, nn::AuxiliaryData *aux) {
     at::Tensor h;
     {
         utils::ScopedProfileRange spr("Conv", 1);
 #if DORADO_CUDA_BUILD
-        if (aux && aux->chunk_table.defined()) {
-            h = convs->run_koi_vcs_conv(input, aux);
+        if (aux && aux->device_chunk_table.defined()) {
+            h = convs->run_koi_vcs_tx(input, aux);
         }
         else
 #endif

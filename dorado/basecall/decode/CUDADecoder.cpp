@@ -38,9 +38,9 @@ DecodeData CUDADecoder::beam_search_part_1(DecodeData data) const {
     if (data.aux) {
         const std::int32_t N_ = std::max<std::int32_t>(N, data.aux->N() * 4);
         chunks = at::empty({N_, 4}, tensor_options_int32);
-        chunks.index({at::indexing::Slice(0, N), 0}) = data.aux->device_chunk_table.index(at::indexing::Slice((0, N), 0));
-        chunks.index({at::indexing::Slice(0, N), 2}) = data.aux->device_chunk_table.index(at::indexing::Slice((0, N), 0));
-        chunks.index({at::indexing::Slice(0, N), 1}) = data.aux->device_chunk_table.index(at::indexing::Slice((0, N), 1));
+        chunks.index({at::indexing::Slice(0, N), 0}) = data.aux->device_chunk_table.index({at::indexing::Slice(0, N), 0});
+        chunks.index({at::indexing::Slice(0, N), 2}) = data.aux->device_chunk_table.index({at::indexing::Slice(0, N), 0});
+        chunks.index({at::indexing::Slice(0, N), 1}) = data.aux->device_chunk_table.index({at::indexing::Slice(0, N), 1});
         chunks.index({at::indexing::Slice(0, N), 3}) = 0;
         chunk_results = at::empty({N_, 8}, tensor_options_int32);
     } else {

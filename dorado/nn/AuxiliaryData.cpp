@@ -25,13 +25,14 @@ AuxiliaryData::AuxiliaryData(at::Tensor workspace,
                              const std::int32_t stride,
                              const std::int32_t chunk_size_granularity_,
                              const std::span<const std::int32_t> chunk_sizes)
-        : workspace_(std::move(workspace)),
+        : chunk_size_granularity(chunk_size_granularity_),
+          workspace_(std::move(workspace)),
           N_(batch_size),
           T_in_(chunk_size),
           T_out_(chunk_size / stride),
           T_lstm_(1 + T_out_ + 1),
           stride_(stride),
-          chunk_size_granularity(chunk_size_granularity_) {
+          chunk_sizes_(std::cbegin(chunk_sizes), std::cend(chunk_sizes)) {
     T_lstm_ += T_lstm_ & 1;  // needs to be even for easier LUT creation
 
     total_num_varlen_chunks = std::ssize(chunk_sizes);
@@ -120,7 +121,7 @@ void AuxiliaryData::create_tx_auxiliary_data([[maybe_unused]] const at::Device& 
         return;
     }
 
-    auto i32_opts = at::TensorOptions().device(device).dtype(at::kInt32);
+    auto i32_opts = at::TensorOptions().device(device).dtype(at::kInt);
     conv_load_lut = at::empty({total_num_granularity}, i32_opts);
     conv_store_lut = at::empty({total_num_granularity}, i32_opts);
     qkv_rope_lut = at::empty({total_num_granularity}, i32_opts);

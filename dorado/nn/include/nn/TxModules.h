@@ -3,6 +3,7 @@
 #include "config/BasecallModelConfig.h"
 #include "nn/RMSNorm.h"
 #include "torch_utils/tensor_utils.h"
+#include "AuxiliaryData.h"
 
 #include <c10/core/Device.h>
 #include <c10/core/TensorOptions.h>
@@ -97,7 +98,7 @@ struct TxEncoderImpl : torch::nn::Module {
 
     at::Tensor forward(at::Tensor x);
 
-    void koi_forward(utils::ScaledTensor &scaled_tensor, at::Tensor &x_f16);
+    void koi_forward(utils::ScaledTensor &scaled_tensor, at::Tensor &x_f16, [[maybe_unused]] AuxiliaryData *aux);
     void koi_volta_forward(at::Tensor &x_f16);
 
     config::TxEncoderParams params;
@@ -119,7 +120,7 @@ TORCH_MODULE(TxEncoder);
 struct TxEncoderStackImpl : torch::nn::Module {
     TxEncoderStackImpl(const config::TxEncoderParams &params, const at::TensorOptions &options);
 
-    at::Tensor forward(const at::Tensor &x, [[maybe_unused]] const AuxiliaryData const *aux);
+    at::Tensor forward(const at::Tensor &x, [[maybe_unused]] AuxiliaryData *aux);
 
     bool use_koi_tiled{false};
     bool use_koi_volta_tiled{false};

@@ -35,14 +35,14 @@ public:
 
     void create_lstm_auxiliary_data(const c10::Device &device, KoiThreads &thread_pool);
     void create_shared_auxiliary_data(const c10::Device &device);
-    void create_tx_auxiliary_data(const c10::Device &device)
+    void create_tx_auxiliary_data(const c10::Device &device);
 
     at::Tensor device_in_layout;
     at::Tensor device_out_layout;
     at::Tensor device_fwd_encoding;
     at::Tensor device_bwd_encoding;
 
-    std::span<const std::int32_t> chunk_sizes() const { return chunk_sizes_; }
+    std::span<const std::int32_t> chunk_sizes() const {  return chunk_sizes_; }
 
     at::Tensor device_chunk_intervals;
     // ! Need to make sure device_chunk_table is used in Decoder !
@@ -61,6 +61,7 @@ private:
     std::int32_t T_out_{0};
     std::int32_t T_lstm_{0};
     std::int32_t stride_{0};
+    std::vector<std::int32_t> chunk_sizes_;
     std::vector<std::int32_t> chunk_table_;
     std::vector<std::int32_t> chunk_intervals_;
 };
