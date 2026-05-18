@@ -129,6 +129,7 @@ void add_arguments(argparse::ArgumentParser& parser) {
     parser.add_argument("--eqx").help("write =/X CIGAR operators").flag();
     parser.add_argument("--MD").help("output the MD tag (no-op since we do by default)").flag();
     parser.add_argument("--cs").help("output the cs tag (none, short, long)");
+    parser.add_argument("--rmq").help("use the minigraph chaining algorithm").flag();
 
     parser.add_argument("--secondary-seq")
             .hidden()
@@ -207,6 +208,9 @@ void apply_mapping_options(const argparse::ArgumentParser& parser, mm_mapopt_t& 
     }
     if (parser.get<bool>("eqx")) {
         options.flag |= MM_F_EQX;
+    }
+    if (parser.get<bool>("rmq")) {
+        options.flag |= MM_F_RMQ;
     }
 }
 
