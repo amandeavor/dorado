@@ -534,9 +534,9 @@ std::vector<AlignmentResult> Minimap2Aligner::align_impl(dorado::ReadCommon& rea
                                                          mm_tbuf_t* buffer,
                                                          int idx_no) {
     mm_bseq1_t query{};
-    query.seq = const_cast<char*>(read_common.seq.c_str());
-    query.name = const_cast<char*>(read_common.read_id.c_str());
-    query.l_seq = static_cast<int>(read_common.seq.length());
+    query.seq = read_common.seq.data();
+    query.name = read_common.read_id.data();
+    query.l_seq = static_cast<int>(read_common.seq.size());
 
     const auto& map_opts = m_minimap_index->mapping_options();
 
@@ -550,13 +550,11 @@ std::vector<AlignmentResult> Minimap2Aligner::align_impl(dorado::ReadCommon& rea
         free(regs);
     });
 
-    std::string alignment_string{};
-    if (!alignment_header.empty()) {
-        alignment_string += alignment_header + "\n";
-    }
-
+    std::string alignment_string;
     if (n_regs == 0) {
         alignment_string = read_common.read_id + UNMAPPED_SAM_LINE_STRIPPED;
+    } else if (!alignment_header.empty()) {
+        alignment_string = alignment_header + "\n";
     }
 
     auto index = m_minimap_index->index(idx_no);
@@ -564,7 +562,7 @@ std::vector<AlignmentResult> Minimap2Aligner::align_impl(dorado::ReadCommon& rea
         kstring_t alignment_line{0, 0, nullptr};
         mm_write_sam3(&alignment_line, index, &query, 0, reg_idx, 1, &n_regs, &regs, NULL,
                       map_opts.flag, buffer->rep_len);
-        alignment_string += std::string(alignment_line.s, alignment_line.l) + "\n";
+        alignment_string.append(std::string_view(alignment_line.s, alignment_line.l)).append("\n");
         free(alignment_line.s);
     }
     return parse_sam_lines(alignment_string, read_common.seq, read_common.qstring);

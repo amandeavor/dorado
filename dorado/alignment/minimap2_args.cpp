@@ -34,24 +34,14 @@ void mm_idxopt_override(mm_idxopt_t* idxopt) {
     idxopt->mini_batch_size = idxopt->batch_size;
 }
 
-const mm_mapopt_t& mm_mapopt_default() {
-    static const mm_mapopt_t instance = [] {
-        mm_mapopt_t mapopt;
-        mm_mapopt_init(&mapopt);
-        mm_mapopt_override(&mapopt);
-        return mapopt;
-    }();
-    return instance;
+void mm_mapopt_set_defaults(mm_mapopt_t& mapopt) {
+    mm_mapopt_init(&mapopt);
+    mm_mapopt_override(&mapopt);
 }
 
-const mm_idxopt_t mm_idxopt_default() {
-    static const mm_idxopt_t instance = [] {
-        mm_idxopt_t idxopt{};
-        mm_idxopt_init(&idxopt);
-        mm_idxopt_override(&idxopt);
-        return idxopt;
-    }();
-    return instance;
+void mm_idxopt_set_defaults(mm_idxopt_t& idxopt) {
+    mm_idxopt_init(&idxopt);
+    mm_idxopt_override(&idxopt);
 }
 
 template <typename TO, typename FROM>
@@ -216,9 +206,9 @@ void apply_mapping_options(const argparse::ArgumentParser& parser, mm_mapopt_t& 
 
 std::optional<Minimap2Options> process_arguments(const argparse::ArgumentParser& parser,
                                                  std::string& error_message) {
-    Minimap2Options res{};
-    res.index_options->get() = mm_idxopt_default();
-    res.mapping_options->get() = mm_mapopt_default();
+    Minimap2Options res;
+    mm_idxopt_set_defaults(res.index_options->get());
+    mm_mapopt_set_defaults(res.mapping_options->get());
 
     // apply preset before overwriting with other user supplied options.
     apply_preset(res, parser.get<std::string>("-x"));
