@@ -63,21 +63,20 @@ std::unique_ptr<nn::AuxiliaryData> create_empty_input(at::Tensor &in,
                                                       const std::int32_t chunk_size_granularity,
                                                       const bool is_lstm_model,
                                                       nn::KoiThreads &thread_pool) {
-    in = torch::empty({1, C, N * T}, in_options);
-    auto workspace_options =
-            at::TensorOptions().device(torch::kCPU).pinned_memory(true).dtype(torch::kInt32);
-    // for workspace size see koi/utils_lstm.h
-    workspace = torch::empty({6 * ((T / stride) + 3) * N}, workspace_options);
-    auto aux = std::make_unique<nn::AuxiliaryData>(workspace, N, T, stride, chunk_size_granularity,
-                                                   std::vector<std::int32_t>(N, T));
-    aux->create_shared_auxiliary_data(in_options.device());  // sync copy
     if (is_lstm_model) {
-        aux->create_lstm_auxiliary_data(in_options.device(),
-                                        thread_pool);  // CPU work + async copy
+        in = torch::empty({1, C, N * T}, in_options);
+        auto workspace_options =
+                at::TensorOptions().device(torch::kCPU).pinned_memory(true).dtype(torch::kInt32);
+        // for workspace size see koi/utils_lstm.h
+        workspace = torch::empty({6 * ((T / stride) + 3) * N}, workspace_options);
     }
     else {
-        aux->create_tx_auxiliary_data(in_options.device());
+        in = torch::empty({N * T, C}, in_options);
     }
+
+    auto aux = std::make_unique<nn::AuxiliaryData>(workspace, N, T, stride, chunk_size_granularity,
+                                                   std::vector<std::int32_t>(N, T));
+    aux->create_auxiliary_data(in_options.device(), thread_pool, is_lstm_model);
     return aux;
 }
 
@@ -257,14 +256,7 @@ std::vector<decode::DecodedChunk> CudaCaller::call_chunks(at::Tensor &input,
     at::Tensor device_input = input.to(m_options.device());  // async copy
 
     if (aux) {
-        aux->create_shared_auxiliary_data(m_options.device());  // sync copy
-        if (m_config.is_lstm_model()) {
-            aux->create_lstm_auxiliary_data(m_options.device(),
-                                            m_thread_pool);  // CPU work + async copy
-        }
-        else {
-            aux->create_tx_auxiliary_data(m_options.device());
-        }
+        aux->create_auxiliary_data(m_options.device(), m_thread_pool, m_config.is_lstm_model());
     }
 
     auto &task_queue = get_task_queue();

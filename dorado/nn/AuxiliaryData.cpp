@@ -62,75 +62,67 @@ void AuxiliaryData::restore_convolution_auxiliary_data() {
 #endif
 }
 
-void AuxiliaryData::create_lstm_auxiliary_data([[maybe_unused]] const at::Device& device,
-                                               [[maybe_unused]] KoiThreads& thread_pool) {
-#if DORADO_CUDA_BUILD
-    if (device_in_layout.defined()) {
-        return;
-    }
-
-    auto options = at::TensorOptions().device(device).dtype(at::kInt);
-    auto stream = c10::cuda::getCurrentCUDAStream(device.index());
-
-    const std::int32_t chunk_sum =
-            std::accumulate(std::cbegin(chunk_sizes_), std::cend(chunk_sizes_), 0);
-
-    device_chunk_intervals =
-            at::from_blob(std::data(chunk_intervals_),
-                          {static_cast<std::int32_t>(std::size(chunk_intervals_))}, options);
-
-    device_in_layout = at::empty({chunk_sum}, options);
-    device_out_layout = at::empty({N_ * (T_lstm_ + 1)}, options);
-    device_fwd_encoding = at::empty({N_ * T_lstm_}, options);
-    device_bwd_encoding = at::empty({N_ * (T_lstm_ + 1)}, options);
-
-    constexpr std::int32_t SUBBATCH_SIZE{32};
-
-    const int status = host_lstm_preprocess(
-            stream.stream(), N_, std::data(chunk_sizes_), std::size(chunk_sizes_), SUBBATCH_SIZE,
-            T_lstm_, workspace_.data_ptr<std::int32_t>(), workspace_.size(0), thread_pool.get(),
-            nullptr, device_out_layout.data_ptr<std::int32_t>(),
-            device_fwd_encoding.data_ptr<std::int32_t>(), device_in_layout.data_ptr<std::int32_t>(),
-            nullptr, device_bwd_encoding.data_ptr<std::int32_t>());
-
-    if (status != KOI_SUCCESS) {
-        throw std::runtime_error("RNN auxiliary data creation failed.");
-    }
-#else
-    throw std::runtime_error("AuxiliaryData error: unsupported code path!");
-#endif
-}
-
-void AuxiliaryData::create_shared_auxiliary_data([[maybe_unused]] const at::Device& device) {
+void AuxiliaryData::create_auxiliary_data([[maybe_unused]] const c10::Device& device,
+                                          [[maybe_unused]] KoiThreads& thread_pool,
+                                          bool is_lstm_model) {
 #if DORADO_CUDA_BUILD
     if (device_chunk_table.defined()) {
         return;
     }
 
+    auto options = at::TensorOptions().device(device).dtype(at::kInt);
     device_chunk_table = at::from_blob(std::data(chunk_table_),
                                        {static_cast<std::int32_t>(std::size(chunk_table_))},
-                                       at::TensorOptions().device(device).dtype(at::kInt));
-#else
-    throw std::runtime_error("AuxiliaryData error: unsupported code path!");
-#endif
-}
+                                       options);
 
-void AuxiliaryData::create_tx_auxiliary_data([[maybe_unused]] const at::Device& device) {
-#if DORADO_CUDA_BUILD
-    if (conv_load_lut.defined() || conv_store_lut.defined() || qkv_rope_lut.defined()) {
-        return;
+    if (is_lstm_model) {
+        if (device_in_layout.defined()) {
+            return;
+        }
+
+        auto stream = c10::cuda::getCurrentCUDAStream(device.index());
+
+        const std::int32_t chunk_sum =
+                std::accumulate(std::cbegin(chunk_sizes_), std::cend(chunk_sizes_), 0);
+
+        device_chunk_intervals =
+                at::from_blob(std::data(chunk_intervals_),
+                            {static_cast<std::int32_t>(std::size(chunk_intervals_))}, options);
+
+        device_in_layout = at::empty({chunk_sum}, options);
+        device_out_layout = at::empty({N_ * (T_lstm_ + 1)}, options);
+        device_fwd_encoding = at::empty({N_ * T_lstm_}, options);
+        device_bwd_encoding = at::empty({N_ * (T_lstm_ + 1)}, options);
+
+        constexpr std::int32_t SUBBATCH_SIZE{32};
+
+        const int status = host_lstm_preprocess(
+                stream.stream(), N_, std::data(chunk_sizes_), std::size(chunk_sizes_), SUBBATCH_SIZE,
+                T_lstm_, workspace_.data_ptr<std::int32_t>(), workspace_.size(0), thread_pool.get(),
+                nullptr, device_out_layout.data_ptr<std::int32_t>(),
+                device_fwd_encoding.data_ptr<std::int32_t>(), device_in_layout.data_ptr<std::int32_t>(),
+                nullptr, device_bwd_encoding.data_ptr<std::int32_t>());
+
+        if (status != KOI_SUCCESS) {
+            throw std::runtime_error("RNN auxiliary data creation failed.");
+        }
     }
+    else {
+        if (conv_load_lut.defined() || conv_store_lut.defined() || qkv_rope_lut.defined()) {
+            throw std::runtime_error("We are trying to re-instantiate Tx VCS LUTs, this shouldn't happen! total_num_granularity depends on current_batch from BasecallerNode.cpp, and we should instantiate new AuxiliaryData with every basecall_current_batch, and subsequent call_chunks.");
+            return;
+        }
 
-    auto i32_opts = at::TensorOptions().device(device).dtype(at::kInt);
-    conv_load_lut = at::empty({total_num_granularity}, i32_opts);
-    conv_store_lut = at::empty({total_num_granularity}, i32_opts);
-    qkv_rope_lut = at::empty({total_num_granularity}, i32_opts);
+        auto i32_opts = at::TensorOptions().device(device).dtype(at::kInt);
+        conv_load_lut = at::empty({total_num_granularity}, i32_opts);
+        conv_store_lut = at::empty({total_num_granularity}, i32_opts);
+        qkv_rope_lut = at::empty({total_num_granularity}, i32_opts);
 
-    // conv_load_lut and conv_store_lut get used on every ConvLayer
-    // qkv_rope_lut does get filled once for a given batch, but its doesn't get filled here
-    // because it would involve hardcoding TxEncoder granularity here, which wouldn't be
-    // the end of the world tbh but decided to fill qkv_rope_lut in TxModules.cpp
-
+        // conv_load_lut and conv_store_lut get used on every ConvLayer
+        // qkv_rope_lut does get filled once for a given batch, but its doesn't get filled here
+        // because it would involve hardcoding TxEncoder granularity here, which wouldn't be
+        // the end of the world tbh but decided to fill qkv_rope_lut in TxModules.cpp
+    }
 #else
     throw std::runtime_error("AuxiliaryData error: unsupported code path!");
 #endif

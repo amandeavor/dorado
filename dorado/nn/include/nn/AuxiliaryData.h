@@ -33,9 +33,7 @@ public:
 
     at::Tensor device_chunk_intervals;
 
-    void create_lstm_auxiliary_data(const c10::Device &device, KoiThreads &thread_pool);
-    void create_shared_auxiliary_data(const c10::Device &device);
-    void create_tx_auxiliary_data(const c10::Device &device);
+    void create_auxiliary_data(const c10::Device& device, KoiThreads& thread_pool, bool is_lstm_model);
 
     at::Tensor device_in_layout;
     at::Tensor device_out_layout;
