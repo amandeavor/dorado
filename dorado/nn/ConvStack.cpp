@@ -427,7 +427,7 @@ at::Tensor ConvStackImpl::ConvLayer::run_koi_vcs_tx(at::Tensor &conv_input,
 
     koi_vcs_sup_fill_conv_load_store_lut(
         stream,
-        aux->total_num_granularity,     // ! This should be aux->total_num_varlen_chunks
+        aux->total_num_varlen_chunks,
         aux->device_chunk_table.data_ptr<int>(),
         aux->conv_load_lut.data_ptr<int>(),  // Load and Store LUTs make sense for them to be in AuxiliaryData.h, as their
         aux->conv_store_lut.data_ptr<int>(), // shape depend on total_num_granularity, which can changes between batches
