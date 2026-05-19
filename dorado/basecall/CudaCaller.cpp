@@ -321,11 +321,20 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> CudaCaller::create_input_output_t
     int64_t output_bytes = 3 * N * T_out;
     auto storage = torch::empty({std::max(input_bytes, output_bytes)}, opts.dtype(torch::kInt8));
     if (m_variable_chunk_sizes) {
-        at::Tensor input =
-                storage.slice(0, 0, input_bytes).view(scalar_type).view({1, C_in, N * T_in});
+        at::Tensor input;
+        std::int64_t aux_size;
+        if (m_config.is_tx_model()) {
+            input = storage.slice(0, 0, input_bytes).view(scalar_type).view({N * T_in, C_in});
+            // Tx AuxiliaryData worse-case scenario is if all chunks are of chunk_size_granularity
+            // 2 for chunk_table, 3 for luts, all being int32
+            aux_size = 5 * (N * (T_in / m_config.chunk_size_granularity()));
+        }
+        else {
+            input = storage.slice(0, 0, input_bytes).view(scalar_type).view({1, C_in, N * T_in});
+            // for workspace size see koi/utils_lstm.h
+            aux_size = 6 * (T_out + 3) * N;
+        }
         at::Tensor output = storage.slice(0, 0, output_bytes);
-        // for workspace size see koi/utils_lstm.h
-        const std::int64_t aux_size = 6 * (T_out + 3) * N;
         at::Tensor aux = torch::empty({aux_size}, opts.dtype(torch::kInt32));
         return {input, output, aux};
     }

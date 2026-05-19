@@ -343,6 +343,7 @@ void BasecallerNode::basecall_worker_thread(int worker_id) {
     // If we're using VCS then we can't put bounds on the number of chunks required to fill a batch,
     // so reserve twice the space as a guess. When not using VCS we can try to pull a whole batch at
     // a time, or fill up our current batch, to reduce how often we contend the AsyncQueue.
+    // TODO: Tune this for Tx VCS
     const std::size_t variable_chunk_sizes_pop_size = 64;
     current_batch.chunks.reserve(m_variable_chunk_sizes ? 2 * batch_size : batch_size);
     popped_chunks.reserve(m_variable_chunk_sizes ? variable_chunk_sizes_pop_size : batch_size);

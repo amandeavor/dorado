@@ -14,17 +14,54 @@ CudaModelRunner::CudaModelRunner(std::shared_ptr<CudaCaller> caller, size_t batc
         : m_caller(std::move(caller)),
           m_batch_size(m_caller->batch_size(batch_dims_idx)),
           m_chunk_size(m_caller->chunk_size(batch_dims_idx)),
-          m_stream(c10::cuda::getStreamFromPool(false, m_caller->device().index())) {
+          m_stream(c10::cuda::getStreamFromPool(false, m_caller->device().index())),
+          m_first_conv_padding_int(m_caller->config().convs.front().winlen / 2) {
     std::tie(m_input, m_output, m_aux) = m_caller->create_input_output_tensor(batch_dims_idx);
+    if (config().is_tx_model()) {
+        m_first_conv_padding_tensor = torch::zeros({
+            m_first_conv_padding_int,
+            config().num_features                       // m_config.convs.front().insize as per BasecallModelConfig.cpp
+        }, at::TensorOptions().device(torch::kCPU));    // Batch is "constructed" on CPU
+    }
 }
 
 void CudaModelRunner::accept_chunk(int chunk_idx, const at::Tensor &chunk) {
     if (m_caller->variable_chunk_sizes()) {
-        m_input.index_put_({torch::indexing::Ellipsis,
-                            torch::indexing::Slice(m_chunk_offset, m_chunk_offset + chunk.size(1))},
-                           chunk);
-        m_chunk_sizes.emplace_back(chunk.size(1));
-        m_chunk_offset += m_chunk_sizes.back();
+        if (config().is_tx_model()) {
+            // Add initial padding if current_batch is empty
+            if (chunk_idx == 0) {
+                m_input.index_put_({
+                    torch::indexing::Slice(0, m_first_conv_padding_int),
+                    torch::indexing::Ellipsis
+                }, m_first_conv_padding_tensor);
+
+                m_chunk_offset += m_first_conv_padding_int;
+            }
+            // Tx VCS Input is of shape (N * T, C_in)
+            int chunk_offset_end = m_chunk_offset + chunk.size(1);
+            m_input.index_put_({
+                torch::indexing::Slice(m_chunk_offset, chunk_offset_end),
+                torch::indexing::Ellipsis
+            }, chunk);
+
+            // Only care about size of raw_data, not added padding
+            m_chunk_sizes.emplace_back(chunk.size(1));
+
+            m_input.index_put_({
+                torch::indexing::Slice(chunk_offset_end, chunk_offset_end + m_first_conv_padding_int),
+                torch::indexing::Ellipsis
+            }, m_first_conv_padding_tensor);
+
+            m_chunk_offset += chunk.size(1) + m_first_conv_padding_int;
+        }
+        else {
+            // LSTM VCS Input is of shape (1, C_in, N * T)
+            m_input.index_put_({torch::indexing::Ellipsis,
+                                torch::indexing::Slice(m_chunk_offset, m_chunk_offset + chunk.size(1))},
+                            chunk);
+            m_chunk_sizes.emplace_back(chunk.size(1));
+            m_chunk_offset += m_chunk_sizes.back();
+        }
     } else {
         m_input.index_put_({chunk_idx, torch::indexing::Ellipsis}, chunk);
     }
