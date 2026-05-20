@@ -128,10 +128,6 @@ std::vector<std::pair<std::size_t, std::size_t>> generate_variable_chunks_tx(con
                                std::to_string(overlap) + " and stride " + std::to_string(stride) +
                                " and chunk_size_granularity " + std::to_string(chunk_size_granularity));
     }
-    if ((overlap % stride) != 0) {
-        throw std::logic_error("utils::generate_chunks: invalid overlap " +
-                               std::to_string(overlap) + " with stride " + std::to_string(stride));
-    }
 
     std::vector<std::pair<std::size_t, std::size_t>> intervals;
     std::size_t offset = 0;
