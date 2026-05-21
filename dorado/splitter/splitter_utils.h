@@ -28,6 +28,17 @@ SimplexReadPtr subread(const SimplexRead& read,
                        std::optional<PosRange> seq_range,
                        PosRange signal_range);
 
+namespace detail {
+// Convert a _Half into signed value that has the same ordering (for fast comparisons).
+inline constexpr int16_t fast_half_comparable(const c10::Half& val) {
+    // Decompose into parts.
+    const bool s = val.x & 0x8000;
+    const int16_t em = val.x & 0x7FFF;
+    // Rebuild as an int16_t.
+    return s ? -em : em;
+}
+}  // namespace detail
+
 template <typename T>
 SampleRanges<T> detect_pore_signal(const at::Tensor& signal,
                                    T threshold,
@@ -39,7 +50,17 @@ SampleRanges<T> detect_pore_signal(const at::Tensor& signal,
     const auto pore_a = signal.accessor<T, 1>();
     const int64_t pore_a_size = pore_a.size(0);
 
-    auto over_threshold = [threshold](const T& val) { return val > threshold; };
+    const auto over_threshold = [threshold](const T& val) {
+    // ARM64 has native _Half support but x64 doesn't and has to convert a c10::Half
+    // to a single precision float to compare them, so use a fast comparison since we
+    // likely won't need the single precision float afterwards.
+#if !defined(__aarch64__)
+        if constexpr (std::is_same_v<T, c10::Half>) {
+            return detail::fast_half_comparable(val) > detail::fast_half_comparable(threshold);
+        }
+#endif
+        return val > threshold;
+    };
 
     int64_t idx = ignore_prefix;
     while (idx < pore_a_size) {

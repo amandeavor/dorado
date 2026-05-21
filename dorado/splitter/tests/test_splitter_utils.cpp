@@ -5,6 +5,9 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
+#include <limits>
+#include <set>
+
 #define CUT_TAG "[splitter_utils]"
 #define DEFINE_TEST(name) CATCH_TEST_CASE(CUT_TAG " " name, CUT_TAG)
 #define DEFINE_TEMPLATE_TEST(name, ...) \
@@ -176,6 +179,34 @@ DEFINE_TEMPLATE_TEST("detect_pore_signal() smoke test", int16_t, float, c10::Hal
         auto peaks = detect_pore_signal<TestType>(signal, test.threshold, test.cluster_dist,
                                                   test.ignore_prefix, test.ignore_spikes_threshold);
         check_equal(test.expected, peaks);
+    }
+}
+
+DEFINE_TEST("fast_half_comparable()") {
+    using dorado::splitter::detail::fast_half_comparable;
+    using limits = std::numeric_limits<c10::Half>;
+
+    // Pick some arbitrary inputs.
+    std::set<c10::Half> inputs;
+    for (int i = -32; i <= 32; i++) {
+        inputs.insert(i / 1.f);
+        inputs.insert(i / 2.f);
+        inputs.insert(i / 3.f);
+    }
+    for (c10::Half v : {limits::max(), limits::min(), limits::lowest(), -limits::lowest()}) {
+        inputs.insert(v / 1.f);
+        inputs.insert(v / 2.f);
+        inputs.insert(v / 3.f);
+    }
+
+    // Test them all against each other.
+    for (float i : inputs) {
+        for (float j : inputs) {
+            CATCH_CAPTURE(i, j);
+            const bool expected = i < j;
+            const bool result = fast_half_comparable(i) < fast_half_comparable(j);
+            CATCH_CHECK(expected == result);
+        }
     }
 }
 
