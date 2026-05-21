@@ -394,6 +394,7 @@ at::Tensor ConvStackImpl::ConvLayer::run_koi_vcs_tx(at::Tensor &conv_input,
     const int C_in = params.insize;
     const int C_out = params.size;
     const int stride = params.stride;
+    const int M_input = conv_input.size(1);
 
     if (!w_device.defined()) {
         // conv->weight is [C_out, C_in, W], we want [C_out, W, C_in] and then further tiling
@@ -412,16 +413,24 @@ at::Tensor ConvStackImpl::ConvLayer::run_koi_vcs_tx(at::Tensor &conv_input,
         b_device = conv->bias.to(opts_f16);
     }
 
+    int M_out = M_input;
     if (!conv_output.defined()) {
         // BasecallerNode.cpp adds varlen_chunks to batch so that varlen_chunks + max_padding_in_ConvLayers does not exceed batch_size * chunk_size
         // So it's safe to instantiate output tensors with M dimension = batch_size * chunk_size, even if actual input is less than that,
         // the final excessive M rows won't get filled this layer, nor loaded next layer, they just never get touched. HOWEVER, they are still needed 
         // so we have fixed M throughout layers and batches! This way, we just instantiate conv_output once per ConvLayer, and re-use it for all batches!
         // All of this so Torch doesn't reallocate output tensors with every batch, consuming all of GPU Mem.
-
-        M_max = aux->N() * aux->T_in(); // aux->N() and aux->T_in() should NOT change throughout entire basecalling
-                                        // Once determined by CudaCaller.cpp, should stay the same until the end of basecalling
-        conv_output = torch::empty({C_out / 8, M_max, 8}, opts_f16);    // Doesn't really need to be in Koi Layout, BUT, if you decide to change it,
+        
+        if (stride > 1) {
+            // Input has padding, we can divide by stride for output, but must make sure we
+            // we make M_out big enough to accommodate "worse-case" max amount of padding
+            // given CudaCaller's N * T. This "max amount of padding" scenario is when
+            // all of N * T is filled with chunk_size_granularity chunks.
+            // You can do the math, and even then, it is 0.5% of M_input, while stride would
+            // reduce it at least 50%, so worth doing
+            M_out = (M_out / stride) + (aux->max_num_granularity * next_layer_padding);
+        }
+        conv_output = torch::empty({C_out / 8, M_out, 8}, opts_f16);    // Doesn't really need to be in Koi Layout, BUT, if you decide to change it,
                                                                         // you must also change TxModules.cpp, as it gets C from THIS layout!
     }
 
@@ -430,9 +439,9 @@ at::Tensor ConvStackImpl::ConvLayer::run_koi_vcs_tx(at::Tensor &conv_input,
         aux->total_num_varlen_chunks,
         aux->device_chunk_table.data_ptr<int>(),
         aux->conv_load_lut.data_ptr<int>(),  // Load and Store LUTs make sense for them to be in AuxiliaryData.h, as their
-        aux->conv_store_lut.data_ptr<int>(), // shape depend on total_num_granularity, which can changes between batches
-        conv_layer_num == 0 ? nullptr : conv_input.data_ptr(),  // ? Input to Conv1 is already padded from BaseCallerNode ?
-        conv_layer_num == 0 ? 0 : M_max,                          // This does not get used for conv1
+        aux->conv_store_lut.data_ptr<int>(), // shape depend on total_num_granularity, which changes between batches
+        conv_layer_num == 0 ? nullptr : conv_input.data_ptr(),
+        conv_layer_num == 0 ? 0 : M_out,
         C_in,
         aux->chunk_size_granularity,    // This value gets updated according to ConvLayers stride in ConvStackImpl::run_koi_vcs_tx
         stride,
@@ -450,7 +459,7 @@ at::Tensor ConvStackImpl::ConvLayer::run_koi_vcs_tx(at::Tensor &conv_input,
             aux->conv_load_lut.data_ptr<int>(),
             aux->conv_store_lut.data_ptr<int>(),
             aux->total_num_granularity,
-            M_max   // M dimension of output tensor
+            M_out   // M dimension of output tensor
         );
     }
     else {
@@ -463,8 +472,8 @@ at::Tensor ConvStackImpl::ConvLayer::run_koi_vcs_tx(at::Tensor &conv_input,
             aux->conv_load_lut.data_ptr<int>(),
             aux->conv_store_lut.data_ptr<int>(),
             aux->total_num_granularity,
-            M_max,              // M dimension of input tensor
-            M_max,               // M dimension of output tensor, both same given VCS Tx strategy!
+            M_input,
+            M_out,
             winlen,
             C_in,
             C_out,

@@ -118,6 +118,8 @@ void AuxiliaryData::create_auxiliary_data([[maybe_unused]] const c10::Device& de
         conv_store_lut = at::empty({total_num_granularity}, i32_opts);
         qkv_rope_lut = at::empty({total_num_granularity}, i32_opts);
 
+        max_num_granularity = NT_in_max() / chunk_size_granularity;
+
         // conv_load_lut and conv_store_lut get used on every ConvLayer
         // qkv_rope_lut does get filled once for a given batch, but its doesn't get filled here
         // because it would involve hardcoding TxEncoder granularity here, which wouldn't be

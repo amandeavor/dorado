@@ -36,7 +36,15 @@ DecodeData CUDADecoder::beam_search_part_1(DecodeData data) const {
     at::Tensor chunks;
     at::Tensor chunk_results;
     if (data.aux) {
-        const std::int32_t N_ = std::max<std::int32_t>(N, data.aux->N() * 4);
+        // TODO: This is to (hopefully) help Torch's memory allocator, to test
+        std::int32_t N_;
+        if (data.aux->conv_load_lut.defined()) {    // Only defined in Tx VCS
+            // This is constant throughout batches
+            N_ = data.aux->max_num_granularity;
+        }
+        else {
+            N_ = std::max<std::int32_t>(N, data.aux->N() * 4);
+        }
         chunks = at::empty({N_, 4}, tensor_options_int32);
         chunks.index({at::indexing::Slice(0, N), 0}) = data.aux->device_chunk_table.index({at::indexing::Slice(0, N), 0});
         chunks.index({at::indexing::Slice(0, N), 2}) = data.aux->device_chunk_table.index({at::indexing::Slice(0, N), 0});
@@ -57,12 +65,21 @@ DecodeData CUDADecoder::beam_search_part_1(DecodeData data) const {
     at::Tensor aux;
     at::Tensor path;
     at::Tensor moves_sequence_qstring;
-    if (data.aux) {
-        const std::int32_t T_ = data.aux->NT_out_max();
-        const std::int32_t Ts_ = std::max<std::int32_t>(T_ + (data.aux->N() * 4), T + N);
-        aux = at::empty(Ts_ * (C + 4 * options.beam_width), tensor_options_int8);
-        path = at::zeros(Ts_, tensor_options_int32);
-        moves_sequence_qstring = at::zeros({3, T_}, tensor_options_int8);
+    if (data.aux && data.aux->device_in_layout.defined()) {
+        if (data.aux->conv_load_lut.defined()) {
+            // Tx VCS
+            aux = at::empty((data.aux->N() * (data.aux->T_in() + 1)) * (C + 4 * options.beam_width), tensor_options_int8);
+            path = at::zeros((data.aux->N() * (data.aux->T_in() + 1)), tensor_options_int32);
+            moves_sequence_qstring = at::zeros({3, data.aux->NT_in_max()}, tensor_options_int8);
+        }
+        else {
+            // lstm VCS
+            const std::int32_t T_ = data.aux->NT_out_max();
+            const std::int32_t Ts_ = std::max<std::int32_t>(T_ + (data.aux->N() * 4), T + N);
+            aux = at::empty(Ts_ * (C + 4 * options.beam_width), tensor_options_int8);
+            path = at::zeros(Ts_, tensor_options_int32);
+            moves_sequence_qstring = at::zeros({3, T_}, tensor_options_int8);
+        }
     } else {
         aux = at::empty(N * (T + 1) * (C + 4 * options.beam_width), tensor_options_int8);
         path = at::zeros(N * (T + 1), tensor_options_int32);
@@ -126,6 +143,8 @@ std::vector<DecodedChunk> CUDADecoder::beam_search_part_2(const DecodeData &data
 
     std::vector<DecodedChunk> called_chunks;
 
+    // TODO: Does this need changing for Tx VCS?
+    // N = total_num_varlen_chunks for Tx VCS too
     if (data.aux) {
         const std::span<const std::int32_t> chunk_sizes(data.aux->chunk_sizes());
         const std::int32_t N = std::ssize(chunk_sizes);

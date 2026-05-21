@@ -272,6 +272,7 @@ std::vector<decode::DecodedChunk> CudaCaller::call_chunks(at::Tensor &input,
         task->cv.wait(lock);
     }
 
+    // TODO: Does this need to be changed for Tx VCS?
     if (aux && m_variable_chunk_sizes) {
         at::Tensor out = output.narrow(0, 0, c10::multiply_integers(task->out.data.sizes()))
                                  .view(task->out.data.sizes());

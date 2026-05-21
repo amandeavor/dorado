@@ -51,6 +51,7 @@ public:
     int chunk_size_granularity;  // This should be chunk_size_granularity() from BasecallModelConfig.h
     int total_num_granularity;    // This is entire input length divided by chunk_size_granularity
     int total_num_varlen_chunks;  // Amount of varlen chunks in batch
+    int max_num_granularity;        // Given CudaCaller's batch_size and chunk_size, max amount of chunks?
 
 private:
     at::Tensor workspace_;
