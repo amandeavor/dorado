@@ -35,38 +35,46 @@ SampleRanges<T> detect_pore_signal(const at::Tensor& signal,
                                    uint64_t ignore_prefix,
                                    uint64_t ignore_spikes_threshold) {
     SampleRanges<T> clusters;
-    auto pore_a = signal.accessor<T, 1>();
-    int64_t cl_start = -1;
-    int64_t cl_end = -1;
 
-    T cl_max = std::numeric_limits<T>::min();
-    int64_t cl_argmax = -1;
-    for (auto i = ignore_prefix; i < uint64_t(pore_a.size(0)); i++) {
-        if (pore_a[i] > threshold) {
-            if (cl_start == -1) {
-                cl_start = i;
-            }
+    const auto pore_a = signal.accessor<T, 1>();
+    const int64_t pore_a_size = pore_a.size(0);
 
-            if (pore_a[i] >= cl_max) {
-                cl_max = pore_a[i];
-                cl_argmax = i;
+    auto over_threshold = [threshold](const T& val) { return val > threshold; };
+
+    int64_t idx = ignore_prefix;
+    while (idx < pore_a_size) {
+        int64_t cl_start = -1;
+
+        // Most of the time is spent looking for the start of a peak, so make that hot loop tight.
+        for (; idx < pore_a_size; idx++) {
+            const T sample = pore_a[idx];
+            if (over_threshold(sample)) {
+                cl_start = idx;
+                break;
             }
-            cl_end = i + 1;
-        } else if (cl_end != -1) {
-            // report cluster
-            assert(cl_start != -1);
-            clusters.push_back(SampleRange(cl_start, cl_end, cl_argmax, cl_max));
-            cl_start = -1;
-            cl_end = -1;
-            cl_argmax = i;
-            cl_max = std::numeric_limits<T>::min();
         }
-    }
+        if (cl_start == -1) {
+            // No peak found.
+            break;
+        }
 
-    // report last cluster
-    if (cl_end != -1) {
-        assert(cl_start != -1);
-        assert(cl_start < pore_a.size(0) && cl_end <= pore_a.size(0));
+        // Read until end of the peak.
+        T cl_max = std::numeric_limits<T>::min();
+        int64_t cl_argmax = -1;
+        for (; idx < pore_a_size; idx++) {
+            const T sample = pore_a[idx];
+            if (!over_threshold(sample)) {
+                break;
+            }
+            if (sample >= cl_max) {
+                cl_max = sample;
+                cl_argmax = idx;
+            }
+        }
+        const int64_t cl_end = idx;
+
+        // report cluster
+        assert(cl_start < pore_a_size && cl_end <= pore_a_size);
         clusters.push_back(SampleRange(cl_start, cl_end, cl_argmax, cl_max));
     }
 
