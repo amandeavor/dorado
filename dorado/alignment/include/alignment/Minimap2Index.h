@@ -41,7 +41,7 @@ class Minimap2Index {
             int num_threads);
 
 public:
-    Minimap2Index(bool skip_header_cache) : m_skip_header_cache(skip_header_cache) {}
+    explicit Minimap2Index(bool skip_header_cache) : m_skip_header_cache(skip_header_cache) {}
     Minimap2Index() : Minimap2Index(false) {}
 
     bool initialise(Minimap2Options options);
