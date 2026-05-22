@@ -175,7 +175,7 @@ std::shared_ptr<Minimap2Index> Minimap2Index::create_compatible_index(
            " create_compatible_index expects compatible indexing options");
     assert(!m_indexes.empty() && " create_compatible_index expects the index has been loaded.");
 
-    auto compatible = std::make_shared<Minimap2Index>();
+    auto compatible = std::make_shared<Minimap2Index>(m_skip_header_cache);
     if (!compatible->initialise(options)) {
         return {};
     }
@@ -202,10 +202,15 @@ void Minimap2Index::add_index(std::shared_ptr<const mm_idx_t> index) {
 }
 
 const utils::HeaderSQRecords& Minimap2Index::get_sequence_records_for_header() const {
+    assert(!m_skip_header_cache);
     return m_header_records_cache;
 }
 
 void Minimap2Index::cache_header_records(const mm_idx_t& index) {
+    if (m_skip_header_cache) {
+        return;
+    }
+
     m_header_records_cache.reserve(m_header_records_cache.size() + index.n_seq);
     const std::filesystem::path reference_path = m_index_reader.file;
 
