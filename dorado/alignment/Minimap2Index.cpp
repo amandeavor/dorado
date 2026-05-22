@@ -12,10 +12,13 @@
 //Ask lh3 t  make some of these funcs publicly available?
 #include <mmpriv.h>
 
+#include <algorithm>
 #include <cassert>
 #include <cstdio>
 #include <filesystem>
 #include <stdexcept>
+#include <unordered_map>
+#include <unordered_set>
 
 namespace {
 
@@ -243,14 +246,24 @@ void Minimap2Index::cache_header_records(const mm_idx_t& index) {
     }
 
     spdlog::debug("Computing SQ M5 hashes.");
+    std::unordered_set<std::string> sequence_names;
+    std::for_each(index.seq, std::next(index.seq, index.n_seq),
+                  [&sequence_names](const mm_idx_seq_t& idx_seq) {
+                      sequence_names.insert(idx_seq.name);
+                  });
+
     std::unordered_map<std::string, std::pair<utils::MD5Hex, uint32_t>> reference_info;
     {
         utils::MD5Generator md5gen;
         hts_io::FastxRecord fastx_record;
         while (fasta_reader->get_next(fastx_record)) {
-            auto& [md5, len] = reference_info[std::string(fastx_record.name)];
+            std::string ref_name = std::string(fastx_record.name);
+            if (!sequence_names.contains(ref_name)) {
+                continue;
+            }
+            auto& [md5, len] = reference_info[ref_name];
             md5gen.get_sequence_md5(md5, fastx_record.seq);
-            len = fastx_record.seq.length();
+            len = static_cast<uint32_t>(fastx_record.seq.length());
         }
     }
 
