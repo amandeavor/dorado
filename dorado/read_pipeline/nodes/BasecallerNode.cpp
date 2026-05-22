@@ -406,6 +406,7 @@ void BasecallerNode::basecall_worker_thread(int worker_id) {
             }
 
             if (m_variable_chunk_sizes) {
+                // TODO: replace `stride` wit `chunk_size_granularity` here
                 size_t overhang = input_slice.size(1) % stride;
                 while (overhang != 0) {  // needed for input_slice.size(1) < (stride - overhang)
                     input_slice =
@@ -415,6 +416,7 @@ void BasecallerNode::basecall_worker_thread(int worker_id) {
                     overhang = input_slice.size(1) % stride;
                 }
 
+                // TODO: change this for tx_model
                 const size_t slice_size = (input_slice.size(1) / stride) + 2;
                 if ((worker_chunks_size_part + slice_size) > max_worker_chunks_size_part) {
                     current_batch.chunks_size += max_worker_chunks_size_part;

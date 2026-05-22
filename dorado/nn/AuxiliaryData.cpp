@@ -23,6 +23,7 @@ AuxiliaryData::AuxiliaryData(at::Tensor workspace,
                              const std::int32_t batch_size,
                              const std::int32_t chunk_size,
                              const std::int32_t stride,
+                             const std::int32_t chunk_size_granularity_,
                              const std::span<const std::int32_t> chunk_sizes)
         : workspace_(std::move(workspace)),
           N_(batch_size),
@@ -30,41 +31,23 @@ AuxiliaryData::AuxiliaryData(at::Tensor workspace,
           T_out_(chunk_size / stride),
           T_lstm_(1 + T_out_ + 1),
           stride_(stride),
-          chunk_sizes_(std::cbegin(chunk_sizes), std::cend(chunk_sizes)) {
+          chunk_size_granularity(chunk_size_granularity_) {
     T_lstm_ += T_lstm_ & 1;  // needs to be even for easier LUT creation
 
-    for (std::int32_t& cs : chunk_sizes_) {
-        cs /= stride;
+    total_num_varlen_chunks = std::ssize(chunk_sizes);
+    chunk_table_.resize(2 * total_num_varlen_chunks);
+    chunk_intervals_.resize(2 * total_num_varlen_chunks);
+    int i = 0;
+    total_num_granularity = 0;
+    for (std::int32_t& cs : chunk_sizes) {
+        int cs_blocks = cs / chunk_size_granularity;
+        chunk_table_[(2 * i) + 0] = total_num_granularity;
+        chunk_table_[(2 * i) + 1] = cs_blocks;
+        chunk_intervals_[(2 * i) + 0] = total_num_granularity;
+        chunk_intervals_[(2 * i) + 1] = total_num_granularity + cs_blocks;
+        total_num_granularity += cs_blocks;
+        ++i;
     }
-
-    chunk_offsets_ = chunk_sizes_;
-    std::exclusive_scan(std::cbegin(chunk_offsets_), std::cend(chunk_offsets_),
-                        std::begin(chunk_offsets_), 0);
-
-    const std::int32_t num_chunks = std::ssize(chunk_sizes);
-    chunk_intervals_.resize(2 * num_chunks);
-    for (std::int32_t i = 0; i < num_chunks; ++i) {
-        chunk_intervals_[(2 * i) + 1] = chunk_sizes[i];
-    }
-    std::partial_sum(std::cbegin(chunk_intervals_), std::cend(chunk_intervals_),
-                     std::begin(chunk_intervals_));
-}
-
-void AuxiliaryData::create_convolution_auxiliary_data([[maybe_unused]] const c10::Device& device) {
-#if DORADO_CUDA_BUILD
-    if (device_chunk_intervals.defined()) {
-        return;
-    }
-
-    auto options = at::TensorOptions().dtype(at::kInt);
-
-    device_chunk_intervals =
-            at::from_blob(std::data(chunk_intervals_),
-                          {static_cast<std::int32_t>(std::size(chunk_intervals_))}, options)
-                    .to(options.device(device));
-#else
-    throw std::runtime_error("AuxiliaryData error: unsupported code path!");
-#endif
 }
 
 void AuxiliaryData::restore_convolution_auxiliary_data() {
@@ -85,16 +68,20 @@ void AuxiliaryData::create_lstm_auxiliary_data([[maybe_unused]] const at::Device
         return;
     }
 
-    auto options = at::TensorOptions().device(device);
+    auto options = at::TensorOptions().device(device).dtype(at::kInt);
     auto stream = c10::cuda::getCurrentCUDAStream(device.index());
+
+    device_chunk_intervals =
+            at::from_blob(std::data(chunk_intervals_),
+                          {static_cast<std::int32_t>(std::size(chunk_intervals_))}, options);
 
     const std::int32_t chunk_sum =
             std::accumulate(std::cbegin(chunk_sizes_), std::cend(chunk_sizes_), 0);
 
-    device_in_layout = at::empty({chunk_sum}, options.dtype(at::kInt));
-    device_out_layout = at::empty({N_ * (T_lstm_ + 1)}, options.dtype(at::kInt));
-    device_fwd_encoding = at::empty({N_ * T_lstm_}, options.dtype(at::kInt));
-    device_bwd_encoding = at::empty({N_ * (T_lstm_ + 1)}, options.dtype(at::kInt));
+    device_in_layout = at::empty({chunk_sum}, options);
+    device_out_layout = at::empty({N_ * (T_lstm_ + 1)}, options);
+    device_fwd_encoding = at::empty({N_ * T_lstm_}, options);
+    device_bwd_encoding = at::empty({N_ * (T_lstm_ + 1)}, options);
 
     constexpr std::int32_t SUBBATCH_SIZE{32};
 
@@ -113,23 +100,15 @@ void AuxiliaryData::create_lstm_auxiliary_data([[maybe_unused]] const at::Device
 #endif
 }
 
-void AuxiliaryData::create_decoder_auxiliary_data([[maybe_unused]] const at::Device& device) {
+void AuxiliaryData::create_shared_auxiliary_data([[maybe_unused]] const at::Device& device) {
 #if DORADO_CUDA_BUILD
-    if (device_chunk_sizes.defined()) {
+    if (device_chunk_table.defined()) {
         return;
     }
 
-    auto options = at::TensorOptions().dtype(at::kInt);
-
-    device_chunk_sizes =
-            at::from_blob(std::data(chunk_sizes_),
-                          {static_cast<std::int32_t>(std::size(chunk_sizes_))}, options)
-                    .to(options.device(device));
-
-    device_chunk_offsets =
-            at::from_blob(std::data(chunk_offsets_),
-                          {static_cast<std::int32_t>(std::size(chunk_offsets_))}, options)
-                    .to(options.device(device));
+    device_chunk_table = at::from_blob(std::data(chunk_table_),
+                                       {static_cast<std::int32_t>(std::size(chunk_table_))},
+                                       at::TensorOptions().device(device).dtype(at::kInt));
 #else
     throw std::runtime_error("AuxiliaryData error: unsupported code path!");
 #endif
