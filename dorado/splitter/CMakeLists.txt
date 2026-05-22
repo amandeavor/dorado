@@ -14,6 +14,8 @@ dorado_add_library(
         RNAReadSplitter.cpp
         splitter_utils.cpp
         splitter_utils.h
+    SOURCES_TEST
+        test_splitter_utils.cpp
     DEPENDS_PUBLIC
         dorado_utils
     DEPENDS_PRIVATE
