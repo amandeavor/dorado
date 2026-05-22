@@ -94,7 +94,7 @@ $dorado_bin basecaller ${model_5k} $pod5_data -b ${batch} --emit-fastq > $output
 if [[ "${VALIDATE_FASTQ}" -eq "1" ]]; then
     $PYTHON ${test_dir}/validate_fastq.py $output_dir/ref.fq $SPECIFICATION_FILE
 fi
-$dorado_bin basecaller ${model_5k} $pod5_data ${models_directory_arg} -b ${batch} --modified-bases 5mCG_5hmCG --emit-moves > $output_dir/calls.bam
+$dorado_bin basecaller ${model_5k} $pod5_data ${models_directory_arg} -b ${batch} --modified-bases 5mC_5hmC --modified-bases-threshold 0.1 --emit-moves > $output_dir/calls.bam
 dorado_check_bam_not_empty
 $dorado_bin basecaller ${model_5k} $pod5_data/ ${models_directory_arg} -x cpu --modified-bases 5mCG_5hmCG -vv > $output_dir/calls.bam
 dorado_check_bam_not_empty
@@ -584,7 +584,7 @@ if true; then
     fi
 
     title dorado in-line modbase duplex from model complex
-    $dorado_bin duplex ${model_complex},5mCG_5hmCG $data_dir/duplex/pod5 ${models_directory_arg} > $output_dir/duplex_calls_mods.bam
+    $dorado_bin duplex ${model_complex},5mC_5hmC $data_dir/duplex/pod5 ${models_directory_arg} --modified-bases-threshold 0.1 > $output_dir/duplex_calls_mods.bam
     if [[ -z "$SAMTOOLS_UNAVAILABLE" ]]; then
         samtools quickcheck -u $output_dir/duplex_calls_mods.bam
         num_duplex_reads=$(samtools view $output_dir/duplex_calls_mods.bam | grep dx:i:1 | wc -l | awk '{print $1}')

@@ -119,7 +119,7 @@ struct BasecallerOptions {
     int min_qscore;
     int run_for;
     std::optional<int> modified_bases_batchsize;
-    std::optional<int> modified_bases_threshold;
+    std::optional<float> modified_bases_threshold;
 
     bool enable_read_splitting;
     bool estimate_poly_a;
@@ -1196,7 +1196,7 @@ int basecaller(int argc, char* argv[]) {
                 .min_qscore = parser.get<int>("--min-qscore"),
                 .run_for = run_for_arg,
                 .modified_bases_batchsize = parser.present<int>("--modified-bases-batchsize"),
-                .modified_bases_threshold = parser.present<int>("--modified-bases-threshold"),
+                .modified_bases_threshold = parser.present<float>("--modified-bases-threshold"),
                 .enable_read_splitting = !parser.get<bool>("--disable-read-splitting"),
                 .estimate_poly_a = estimate_poly_a,
                 .variable_chunk_sizes = !parser.get<bool>("--disable-variable-chunk-sizes"),
