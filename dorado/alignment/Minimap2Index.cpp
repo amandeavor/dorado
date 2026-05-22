@@ -261,7 +261,8 @@ void Minimap2Index::cache_header_records(const mm_idx_t& index) {
     {
         utils::MD5Generator md5gen;
         hts_io::FastxRecord fastx_record;
-        while (fasta_reader->get_next(fastx_record)) {
+        while (reference_info.size() != sequence_names.size() &&
+               fasta_reader->get_next(fastx_record)) {
             std::string ref_name = std::string(fastx_record.name);
             if (!sequence_names.contains(ref_name)) {
                 continue;
