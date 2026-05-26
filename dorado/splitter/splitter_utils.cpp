@@ -116,7 +116,7 @@ SampleRanges<T> detect_pore_signal(const at::Tensor& signal,
                                    uint64_t ignore_spikes_threshold) {
     SampleRanges<T> clusters;
 
-    const auto pore_a = signal.accessor<T, 1>();
+    const auto pore_a = signal.accessor<const T, 1>();
     const int64_t pore_a_size = pore_a.size(0);
 
     const auto over_threshold = [threshold](const T& val) {
