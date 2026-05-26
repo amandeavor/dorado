@@ -29,6 +29,7 @@ class Minimap2Index {
     utils::HeaderSQRecords m_header_records_cache;
     IndexReader m_index_reader;
     bool m_incremental_load{false};
+    bool m_skip_header_cache;
 
     void set_index(std::shared_ptr<const mm_idx_t> index);
     void add_index(std::shared_ptr<const mm_idx_t> index);
@@ -40,6 +41,9 @@ class Minimap2Index {
             int num_threads);
 
 public:
+    explicit Minimap2Index(bool skip_header_cache) : m_skip_header_cache(skip_header_cache) {}
+    Minimap2Index() : Minimap2Index(false) {}
+
     bool initialise(Minimap2Options options);
     IndexLoadResult load(const std::string& index_file, int num_threads, bool incremental_load);
     IndexLoadResult load_next_chunk(int num_threads);

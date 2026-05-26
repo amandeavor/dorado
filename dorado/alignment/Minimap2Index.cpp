@@ -1,9 +1,9 @@
 #include "alignment/Minimap2Index.h"
 
 #include "alignment/minimap2_wrappers.h"
-#include "hts_utils/FastxRandomReader.h"
-#include "hts_utils/fai_utils.h"
+#include "hts_utils/FastxSequentialReader.h"
 #include "hts_utils/header_sq_record.h"
+#include "hts_utils/hts_types.h"
 #include "hts_utils/sequence_file_format.h"
 
 #include <spdlog/spdlog.h>
@@ -12,10 +12,13 @@
 //Ask lh3 t  make some of these funcs publicly available?
 #include <mmpriv.h>
 
+#include <algorithm>
 #include <cassert>
 #include <cstdio>
 #include <filesystem>
 #include <stdexcept>
+#include <unordered_map>
+#include <unordered_set>
 
 namespace {
 
@@ -172,7 +175,7 @@ std::shared_ptr<Minimap2Index> Minimap2Index::create_compatible_index(
            " create_compatible_index expects compatible indexing options");
     assert(!m_indexes.empty() && " create_compatible_index expects the index has been loaded.");
 
-    auto compatible = std::make_shared<Minimap2Index>();
+    auto compatible = std::make_shared<Minimap2Index>(m_skip_header_cache);
     if (!compatible->initialise(options)) {
         return {};
     }
@@ -199,10 +202,15 @@ void Minimap2Index::add_index(std::shared_ptr<const mm_idx_t> index) {
 }
 
 const utils::HeaderSQRecords& Minimap2Index::get_sequence_records_for_header() const {
+    assert(!m_skip_header_cache);
     return m_header_records_cache;
 }
 
 void Minimap2Index::cache_header_records(const mm_idx_t& index) {
+    if (m_skip_header_cache) {
+        return;
+    }
+
     m_header_records_cache.reserve(m_header_records_cache.size() + index.n_seq);
     const std::filesystem::path reference_path = m_index_reader.file;
 
@@ -232,16 +240,10 @@ void Minimap2Index::cache_header_records(const mm_idx_t& index) {
     const std::shared_ptr<const std::string> uri = std::make_shared<std::string>(
             "file://" + std::filesystem::weakly_canonical(m_index_reader.file).string());
 
-    // Create a FAI (likely already created / re-used by another process)
-    if (!utils::check_fai_exists(reference_path) && !utils::create_fai_index(reference_path)) {
-        spdlog::error("Failed to create a .fai index for reference '{}'.", reference_path.string());
-        throw std::runtime_error("Failed to create .fai index for reference.");
-    }
-
     // Open the FASTA Reader
-    std::unique_ptr<hts_io::FastxRandomReader> fasta_reader;
+    std::unique_ptr<hts_io::FastxSequentialReader> fasta_reader;
     try {
-        fasta_reader = std::make_unique<hts_io::FastxRandomReader>(reference_path);
+        fasta_reader = std::make_unique<hts_io::FastxSequentialReader>(reference_path);
     } catch (const std::exception& exc) {
         spdlog::error("Failed to open FASTA reference '{}' for SQ M5 calculation: '{}'.",
                       reference_path.string(), exc.what());
@@ -249,24 +251,53 @@ void Minimap2Index::cache_header_records(const mm_idx_t& index) {
     }
 
     spdlog::debug("Computing SQ M5 hashes.");
+    std::unordered_set<std::string> sequence_names;
+    std::for_each(index.seq, std::next(index.seq, index.n_seq),
+                  [&sequence_names](const mm_idx_seq_t& idx_seq) {
+                      sequence_names.insert(idx_seq.name);
+                  });
+
+    std::unordered_map<std::string, std::pair<utils::MD5Hex, uint32_t>> reference_info;
+    {
+        utils::MD5Generator md5gen;
+        hts_io::FastxRecord fastx_record;
+        while (reference_info.size() != sequence_names.size() &&
+               fasta_reader->get_next(fastx_record)) {
+            std::string ref_name = std::string(fastx_record.name);
+            if (!sequence_names.contains(ref_name)) {
+                continue;
+            }
+            auto& [md5, len] = reference_info[ref_name];
+            md5gen.get_sequence_md5(md5, fastx_record.seq);
+            len = static_cast<uint32_t>(fastx_record.seq.length());
+        }
+    }
+
     // Lookup each sequence by name and compute the MD5 hash.
-    utils::MD5Generator md5gen;
     for (uint32_t j = 0; j < index.n_seq; ++j) {
-        utils::HeaderSQRecord record{std::string(index.seq[j].name), index.seq[j].len, uri};
+        std::string ref_sequence_name = index.seq[j].name;
+        const uint32_t ref_sequence_length = index.seq[j].len;
 
-        const std::string seq = fasta_reader->fetch_seq(record.sequence_name);
-        if (seq.empty()) {
-            spdlog::error("Reference sequence '{}' not found in '{}'.", record.sequence_name,
-                          reference_path.string());
-            throw std::runtime_error("Reference sequence missing from FASTA.");
-        }
-        if (seq.size() != record.length) {
-            spdlog::error("Reference sequence '{}' length mismatch for '{}': expected {}, got {}.",
-                          record.sequence_name, reference_path.string(), record.length, seq.size());
-            throw std::runtime_error("Reference sequence length mismatch.");
+        auto info = reference_info.find(ref_sequence_name);
+        if (info == std::end(reference_info)) {
+            throw std::runtime_error(fmt::format("Reference sequence '{}' not found in '{}'.",
+                                                 ref_sequence_name, reference_path.string()));
         }
 
-        md5gen.get_sequence_md5(record.md5, seq);
+        if (info->second.second != ref_sequence_length) {
+            throw std::runtime_error(fmt::format(
+                    "Reference sequence '{}' length mismatch for '{}': expected {}, got {}.",
+                    ref_sequence_name, reference_path.string(), ref_sequence_length,
+                    info->second.second));
+        }
+
+        utils::HeaderSQRecord record{
+                .sequence_name = std::move(ref_sequence_name),
+                .length = ref_sequence_length,
+                .uri = uri,
+        };
+
+        std::strncpy(record.md5, info->second.first, std::size(info->second.first));
         m_header_records_cache.emplace_back(std::move(record));
     }
 

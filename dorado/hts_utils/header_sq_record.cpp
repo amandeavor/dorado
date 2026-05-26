@@ -26,7 +26,7 @@ void add_sq_hdr(sam_hdr_t* hdr, const HeaderSQRecords& seqs) {
 MD5Generator::MD5Generator() : m_ctx(hts_md5_init()) {}
 MD5Generator::~MD5Generator() { hts_md5_destroy(m_ctx); }
 
-void MD5Generator::get_sequence_md5(MD5Hex& hex, const std::string& sequence) {
+void MD5Generator::get_sequence_md5(MD5Hex& hex, std::string_view sequence) {
     hts_md5_reset(m_ctx);
     hts_md5_update(m_ctx, sequence.data(), static_cast<uint32_t>(sequence.size()));
     unsigned char digest[16];

@@ -209,12 +209,10 @@ void CorrectionMapper::process(Pipeline& pipeline) {
         size_t total_skipped = 0;
 
         do {
-            const utils::HeaderSQRecords headers = m_index->get_sequence_records_for_header();
-
+            auto index = m_index->index(m_index->num_loaded_index_blocks() - 1);
             bool found = false;
-            for (size_t i = 0; i < std::size(headers); ++i) {
-                const auto& header = headers[i];
-                if (header.sequence_name == m_furthest_skip_header) {
+            for (uint32_t i = 0; i < index->n_seq; ++i) {
+                if (index->seq[i].name == m_furthest_skip_header) {
                     found = true;
                     spdlog::debug("Resume: found header {} in index chunk ID {}.",
                                   m_furthest_skip_header, m_current_index);
@@ -222,14 +220,14 @@ void CorrectionMapper::process(Pipeline& pipeline) {
                 }
             }
             if (found) {
-                spdlog::debug("Resume: stoping the initial iteration.");
+                spdlog::debug("Resume: stopping the initial iteration.");
                 break;
             }
 
             ++m_current_index;
-            total_skipped += std::size(headers);
+            total_skipped += index->n_seq;
             spdlog::debug("Resume: skipping index batch of {} reads. Total skipped: {}",
-                          std::size(headers), total_skipped);
+                          index->n_seq, total_skipped);
 
         } while (m_index->load_next_chunk(m_num_threads) !=
                  alignment::IndexLoadResult::end_of_index);
@@ -334,7 +332,7 @@ CorrectionMapper::CorrectionMapper(const std::string& index_file,
     mapping_options.cap_kalloc = minimap_default_mapopt.cap_kalloc;
     mapping_options.max_sw_mat = minimap_default_mapopt.max_sw_mat;
 
-    m_index = std::make_shared<alignment::Minimap2Index>();
+    m_index = std::make_shared<alignment::Minimap2Index>(true);
     if (!m_index->initialise(options)) {
         throw std::runtime_error("Failed to initialize with options.");
     } else {

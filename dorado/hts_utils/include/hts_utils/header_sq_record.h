@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 
 struct sam_hdr_t;
@@ -26,7 +27,7 @@ public:
     MD5Generator();
     ~MD5Generator();
 
-    void get_sequence_md5(MD5Hex& hex, const std::string& sequence);
+    void get_sequence_md5(MD5Hex& hex, std::string_view sequence);
 
 private:
     hts_md5_context* m_ctx;
