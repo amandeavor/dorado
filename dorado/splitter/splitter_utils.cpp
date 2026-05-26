@@ -120,7 +120,12 @@ SampleRanges<T> detect_pore_signal(const at::Tensor& signal,
                                    uint64_t ignore_spikes_threshold) {
     SampleRanges<T> clusters;
 
+#if C10_ASAN_ENABLED
+    // For some reason mold has issues finding the const version of this symbol when sanitizers are enabled.
+    const auto pore_a = signal.accessor<T, 1>();
+#else
     const auto pore_a = signal.accessor<const T, 1>();
+#endif
     const auto pore_a_data = pore_a.data();
     const int64_t pore_a_size = pore_a.size(0);
     TORCH_CHECK(signal.stride(0) == 1, "signal should be contiguous");
