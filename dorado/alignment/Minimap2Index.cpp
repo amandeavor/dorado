@@ -276,7 +276,7 @@ void Minimap2Index::cache_header_records(const mm_idx_t& index) {
     // Lookup each sequence by name and compute the MD5 hash.
     for (uint32_t j = 0; j < index.n_seq; ++j) {
         std::string ref_sequence_name = index.seq[j].name;
-        uint32_t ref_sequence_length = index.seq[j].len;
+        const uint32_t ref_sequence_length = index.seq[j].len;
 
         auto info = reference_info.find(ref_sequence_name);
         if (info == std::end(reference_info)) {
