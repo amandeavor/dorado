@@ -117,7 +117,9 @@ SampleRanges<T> detect_pore_signal(const at::Tensor& signal,
     SampleRanges<T> clusters;
 
     const auto pore_a = signal.accessor<const T, 1>();
+    const auto pore_a_data = pore_a.data();
     const int64_t pore_a_size = pore_a.size(0);
+    TORCH_CHECK(signal.stride(0) == 1, "signal should be contiguous");
 
     const auto over_threshold = [threshold](const T& val) {
     // ARM64 has native _Half support but x64 doesn't and has to convert a c10::Half
@@ -137,7 +139,7 @@ SampleRanges<T> detect_pore_signal(const at::Tensor& signal,
 
         // Most of the time is spent looking for the start of a peak, so make that hot loop tight.
         for (; idx < pore_a_size; idx++) {
-            const T sample = pore_a[idx];
+            const T sample = pore_a_data[idx];
             if (over_threshold(sample)) {
                 cl_start = idx;
                 break;
@@ -152,7 +154,7 @@ SampleRanges<T> detect_pore_signal(const at::Tensor& signal,
         T cl_max = std::numeric_limits<T>::min();
         int64_t cl_argmax = -1;
         for (; idx < pore_a_size; idx++) {
-            const T sample = pore_a[idx];
+            const T sample = pore_a_data[idx];
             if (!over_threshold(sample)) {
                 break;
             }
