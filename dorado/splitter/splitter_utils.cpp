@@ -9,6 +9,10 @@
 #include <limits>
 #include <type_traits>
 
+#if defined(__SSE2__)
+#include <x86intrin.h>
+#endif
+
 namespace dorado::splitter {
 namespace {
 // This part of subread() is split out into its own unoptimised function since not doing so
@@ -138,11 +142,58 @@ SampleRanges<T> detect_pore_signal(const at::Tensor& signal,
         int64_t cl_start = -1;
 
         // Most of the time is spent looking for the start of a peak, so make that hot loop tight.
-        for (; idx < pore_a_size; idx++) {
-            const T sample = pore_a_data[idx];
-            if (over_threshold(sample)) {
-                cl_start = idx;
-                break;
+#if defined(__SSE2__)
+        if constexpr (std::is_same_v<T, c10::Half>) {
+            using Register = __m128i;
+            static constexpr int64_t kHalfsPerRegister = 8;
+            static const Register kSignBit = _mm_set1_epi16(0x8000);
+            static const Register kExpManMask = _mm_set1_epi16(0x7FFF);
+            static const Register kOne = _mm_set1_epi16(1);
+
+            const Register fast_threshold = _mm_set1_epi16(detail::fast_half_comparable(threshold));
+            const int64_t unrolled = pore_a_size / kHalfsPerRegister * kHalfsPerRegister;
+
+            for (; idx < unrolled; idx += kHalfsPerRegister) {
+                // Load 8 halfs into a register.
+                Register halfs = _mm_loadu_si128((const __m128i_u*)&pore_a_data[idx]);
+
+                // SIMD version of fast_half_comparable().
+                Register sign = _mm_and_si128(halfs, kSignBit);
+                Register em = _mm_and_si128(halfs, kExpManMask);
+                // We emulate |vals = sign ? -em : em| by doing |vals = sign * em| instead.
+                // TODO: if we had SSSE3 support we could use _mm_sign_epi16() instead.
+                // |sign| will either be 0x8000 or 0 depending on if the sign bit is set.
+                // We need to map these to -1 or 1 respectively, which we can do with a shift and a sub.
+                // 1 - (0x8000 >> 14) = -1
+                // 1 - (0x0000 >> 14) = 1
+                Register mul = _mm_sub_epi16(kOne, _mm_srli_epi16(sign, 14));
+                Register vals = _mm_mullo_epi16(mul, em);
+
+                // over_threshold() comparison.
+                const uint16_t cmp = _mm_movemask_epi8(_mm_cmpgt_epi16(vals, fast_threshold));
+
+                // If any of them are set then we've found a match.
+                if (cmp != 0) [[unlikely]] {
+                    // Each bit in |cmp| corresponds to a byte in the register,
+                    // so an int16 comparison takes 2 bits per element.
+                    const int first_set = std::countr_zero(cmp) / 2;
+                    idx += first_set;
+                    cl_start = idx;
+                    break;
+                }
+            }
+        }
+
+        // Search the rest linearly if we haven't found one.
+        if (cl_start == -1)
+#endif
+        {
+            for (; idx < pore_a_size; idx++) {
+                const T sample = pore_a_data[idx];
+                if (over_threshold(sample)) {
+                    cl_start = idx;
+                    break;
+                }
             }
         }
         if (cl_start == -1) {
