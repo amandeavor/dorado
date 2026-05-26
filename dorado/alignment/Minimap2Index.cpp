@@ -280,16 +280,15 @@ void Minimap2Index::cache_header_records(const mm_idx_t& index) {
 
         auto info = reference_info.find(ref_sequence_name);
         if (info == std::end(reference_info)) {
-            spdlog::error("Reference sequence '{}' not found in '{}'.", ref_sequence_name,
-                          reference_path.string());
-            throw std::runtime_error("Reference sequence missing from FASTA.");
+            throw std::runtime_error(fmt::format("Reference sequence '{}' not found in '{}'.",
+                                                 ref_sequence_name, reference_path.string()));
         }
 
         if (info->second.second != ref_sequence_length) {
-            spdlog::error("Reference sequence '{}' length mismatch for '{}': expected {}, got {}.",
-                          ref_sequence_name, reference_path.string(), ref_sequence_length,
-                          info->second.second);
-            throw std::runtime_error("Reference sequence length mismatch.");
+            throw std::runtime_error(fmt::format(
+                    "Reference sequence '{}' length mismatch for '{}': expected {}, got {}.",
+                    ref_sequence_name, reference_path.string(), ref_sequence_length,
+                    info->second.second));
         }
 
         utils::HeaderSQRecord record{
