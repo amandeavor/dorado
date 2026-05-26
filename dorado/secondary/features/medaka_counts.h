@@ -18,7 +18,7 @@ static constexpr int64_t PILEUP_POS_DEL_FWD = 9;  // position of D
 static constexpr int64_t PILEUP_POS_DEL_REV = 8;  // position of d
 
 // bam tag used for datatypes
-static constexpr std::string_view DATATYPE_TAG{"DT\0"};
+static constexpr char DATATYPE_TAG[] = "DT";
 
 // convert 16bit IUPAC (+16 for strand) to PILEUP_BASES index
 static constexpr std::array<int32_t, 32> NUM_TO_COUNT_BASE{

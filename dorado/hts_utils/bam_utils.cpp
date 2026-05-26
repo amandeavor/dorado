@@ -1,8 +1,6 @@
 #include "hts_utils/bam_utils.h"
 
 #include "hts_utils/KString.h"
-#include "utils/SampleSheet.h"
-#include "utils/barcode_kits.h"
 #include "utils/sequence_utils.h"
 #include "utils/string_utils.h"
 
@@ -10,6 +8,7 @@
 #include <htslib/sam.h>
 
 #include <algorithm>
+#include <bitset>
 #include <cassert>
 #include <cctype>
 #include <cmath>

@@ -21,6 +21,9 @@ void mm_mapopt_override(mm_mapopt_t* mapopt) {
     // Force cigar generation.
     mapopt->flag |= MM_F_CIGAR;
 
+    // Always emit MD tags.
+    mapopt->flag |= MM_F_OUT_MD;
+
     // Equivalent to "--cap-kalloc 100m --cap-sw-mem 50m"
     mapopt->cap_kalloc = 100'000'000;
     mapopt->max_sw_mat = 50'000'000;
@@ -31,24 +34,14 @@ void mm_idxopt_override(mm_idxopt_t* idxopt) {
     idxopt->mini_batch_size = idxopt->batch_size;
 }
 
-const mm_mapopt_t& mm_mapopt_default() {
-    static const mm_mapopt_t instance = [] {
-        mm_mapopt_t mapopt;
-        mm_mapopt_init(&mapopt);
-        mm_mapopt_override(&mapopt);
-        return mapopt;
-    }();
-    return instance;
+void mm_mapopt_set_defaults(mm_mapopt_t& mapopt) {
+    mm_mapopt_init(&mapopt);
+    mm_mapopt_override(&mapopt);
 }
 
-const mm_idxopt_t mm_idxopt_default() {
-    static const mm_idxopt_t instance = [] {
-        mm_idxopt_t idxopt{};
-        mm_idxopt_init(&idxopt);
-        mm_idxopt_override(&idxopt);
-        return idxopt;
-    }();
-    return instance;
+void mm_idxopt_set_defaults(mm_idxopt_t& idxopt) {
+    mm_idxopt_init(&idxopt);
+    mm_idxopt_override(&idxopt);
 }
 
 template <typename TO, typename FROM>
@@ -124,6 +117,12 @@ void add_arguments(argparse::ArgumentParser& parser) {
             .default_value(std::string{DEFAULT_MM_PRESET});
 
     parser.add_argument("--eqx").help("write =/X CIGAR operators").flag();
+    parser.add_argument("--MD").help("output the MD tag (no-op since we do by default)").flag();
+    parser.add_argument("--cs")
+            .help("output the cs tag")
+            .choices("none", "short", "long")
+            .default_value("none");
+    parser.add_argument("--rmq").help("use the minigraph chaining algorithm").flag();
 
     parser.add_argument("--secondary-seq")
             .hidden()
@@ -203,13 +202,16 @@ void apply_mapping_options(const argparse::ArgumentParser& parser, mm_mapopt_t& 
     if (parser.get<bool>("eqx")) {
         options.flag |= MM_F_EQX;
     }
+    if (parser.get<bool>("rmq")) {
+        options.flag |= MM_F_RMQ;
+    }
 }
 
 std::optional<Minimap2Options> process_arguments(const argparse::ArgumentParser& parser,
                                                  std::string& error_message) {
-    Minimap2Options res{};
-    res.index_options->get() = mm_idxopt_default();
-    res.mapping_options->get() = mm_mapopt_default();
+    Minimap2Options res;
+    mm_idxopt_set_defaults(res.index_options->get());
+    mm_mapopt_set_defaults(res.mapping_options->get());
 
     // apply preset before overwriting with other user supplied options.
     apply_preset(res, parser.get<std::string>("-x"));
@@ -233,6 +235,8 @@ std::optional<Minimap2Options> process_arguments(const argparse::ArgumentParser&
         // set the global flags
         mm_dbg_flag |= MM_DBG_PRINT_QNAME | MM_DBG_PRINT_ALN_SEQ;
     }
+
+    apply_cs_option(res, parser.get("cs"));
 
     return res;
 }
@@ -293,7 +297,7 @@ std::optional<Minimap2Options> try_parse_options_no_help(const std::string& mini
     return try_parse_options_impl(parser, minimap2_option_string, error_message);
 }
 
-void apply_cs_option(Minimap2Options& options, const std::string& cs_opt) {
+void apply_cs_option(Minimap2Options& options, std::string_view cs_opt) {
     if (cs_opt.empty()) {
         return;
     }
@@ -311,7 +315,7 @@ void apply_cs_option(Minimap2Options& options, const std::string& cs_opt) {
     }
 }
 
-void apply_dual_option(Minimap2Options& options, const std::string& dual) {
+void apply_dual_option(Minimap2Options& options, std::string_view dual) {
     if (dual.empty()) {
         return;
     }
