@@ -201,26 +201,49 @@ DEFINE_TEMPLATE_TEST("detect_pore_signal() smoke test", int16_t, float, c10::Hal
     }
 }
 
-DEFINE_TEMPLATE_TEST("detect_pore_signal() big input, single spike", int16_t, float, c10::Half) {
+DEFINE_TEMPLATE_TEST("detect_pore_signal() big input, spikes", int16_t, float, c10::Half) {
     constexpr auto dtype = get_dtype<TestType>();
     const auto options = at::TensorOptions().dtype(dtype);
 
     const std::size_t max_size = 100;
     const float range = 20;  // using range as threshold
     std::minstd_rand rng;
-    std::uniform_real_distribution<float> dist(-range, range - 1);
+    std::uniform_real_distribution<float> dist(-range, range);
 
-    for (std::size_t idx = 0; idx < max_size; idx++) {
-        CATCH_CAPTURE(idx);
+    for (std::size_t spike_idx_1 = 0; spike_idx_1 < max_size; spike_idx_1++) {
+        for (std::size_t spike_idx_2 = 0; spike_idx_2 < max_size; spike_idx_2++) {
+            CATCH_CAPTURE(spike_idx_1, spike_idx_2);
 
-        // Single spike at idx.
-        std::vector<TestType> input(max_size);
-        std::generate(input.begin(), input.end(), [&] { return static_cast<TestType>(dist(rng)); });
-        input[idx] = range * 2;
+            // Add both spikes. It's intentional for both to sometimes overlap.
+            std::vector<TestType> input(max_size);
+            std::generate(input.begin(), input.end(),
+                          [&] { return static_cast<TestType>(dist(rng)); });
+            input[spike_idx_1] = range + 1;
+            input[spike_idx_2] = range + 1;
 
-        const auto signal = at::from_blob(std::data(input), std::size(input), options);
-        auto peaks = detect_pore_signal<TestType>(signal, range, 0, 0, 0);
-        check_equal({SampleRange<TestType>(idx, idx + 1, idx, input[idx])}, peaks);
+            const auto signal = at::from_blob(std::data(input), std::size(input), options);
+            const auto peaks = detect_pore_signal<TestType>(signal, range, 0, 0, 0);
+
+            SampleRanges<TestType> expected;
+            if (spike_idx_1 == spike_idx_2) {
+                // Both the same spike.
+                const std::size_t idx = spike_idx_1;
+                expected.push_back(SampleRange<TestType>(idx, idx + 1, idx, input[idx]));
+            } else if (spike_idx_1 == spike_idx_2 + 1 || spike_idx_2 == spike_idx_1 + 1) {
+                // Close enough that they combine together.
+                const std::size_t start = std::min(spike_idx_1, spike_idx_2);
+                const std::size_t end = std::max(spike_idx_1, spike_idx_2);
+                expected.push_back(SampleRange<TestType>(start, end + 1, end, input[end]));
+            } else {
+                // 2 unique spikes.
+                std::array<std::size_t, 2> spikes{spike_idx_1, spike_idx_2};
+                std::sort(spikes.begin(), spikes.end());
+                for (std::size_t i : spikes) {
+                    expected.push_back(SampleRange<TestType>(i, i + 1, i, input[i]));
+                }
+            }
+            check_equal(expected, peaks);
+        }
     }
 }
 

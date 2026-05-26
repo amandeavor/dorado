@@ -156,11 +156,12 @@ SampleRanges<T> detect_pore_signal(const at::Tensor& signal,
             static const Register kOne = _mm_set1_epi16(1);
 
             const Register fast_threshold = _mm_set1_epi16(detail::fast_half_comparable(threshold));
-            const int64_t unrolled = pore_a_size / kHalfsPerRegister * kHalfsPerRegister;
 
-            for (; idx < unrolled; idx += kHalfsPerRegister) {
+            // |idx| isn't necessarily a multiple of |kHalfsPerRegister| since we don't know where the last open pore
+            // ended, so we always have to check for enough space (no (x/8)*8 trickery).
+            for (; idx < pore_a_size - kHalfsPerRegister; idx += kHalfsPerRegister) {
                 // Load 8 halfs into a register.
-                Register halfs = _mm_loadu_si128((const __m128i_u*)&pore_a_data[idx]);
+                Register halfs = _mm_loadu_si128((const __m128i_u*)(pore_a_data + idx));
 
                 // SIMD version of fast_half_comparable().
                 Register sign = _mm_and_si128(halfs, kSignBit);
