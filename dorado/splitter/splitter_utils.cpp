@@ -6,7 +6,6 @@
 
 #include <ATen/TensorIndexing.h>
 
-#include <limits>
 #include <type_traits>
 
 #if defined(__SSE2__)
@@ -207,9 +206,11 @@ SampleRanges<T> detect_pore_signal(const at::Tensor& signal,
             break;
         }
 
+        // Grab the start position.
+        int64_t cl_argmax = idx++;
+        T cl_max = pore_a_data[cl_argmax];
+
         // Read until end of the peak.
-        T cl_max = std::numeric_limits<T>::min();
-        int64_t cl_argmax = -1;
         for (; idx < pore_a_size; idx++) {
             const T sample = pore_a_data[idx];
             if (!over_threshold(sample)) {
@@ -220,7 +221,12 @@ SampleRanges<T> detect_pore_signal(const at::Tensor& signal,
                 cl_argmax = idx;
             }
         }
-        const int64_t cl_end = idx;
+
+        // Grab the end position.
+        // Note that it's safe to increment |idx| here since |cl_end| is the first index
+        // after the peak, and hence we don't need to test |idx| again to see if it's above
+        // the threshold.
+        const int64_t cl_end = idx++;
 
         // report cluster
         assert(cl_start < pore_a_size && cl_end <= pore_a_size);
