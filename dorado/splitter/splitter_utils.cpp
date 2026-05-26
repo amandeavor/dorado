@@ -6,10 +6,13 @@
 
 #include <ATen/TensorIndexing.h>
 
+#include <bit>
 #include <type_traits>
 
 #if defined(__SSE2__)
 #include <x86intrin.h>
+#elif defined(__ARM_NEON__)
+#include <arm_neon.h>
 #endif
 
 namespace dorado::splitter {
@@ -146,8 +149,9 @@ SampleRanges<T> detect_pore_signal(const at::Tensor& signal,
         int64_t cl_start = -1;
 
         // Most of the time is spent looking for the start of a peak, so make that hot loop tight.
-#if defined(__SSE2__)
+#if defined(__SSE2__) || defined(__ARM_NEON__)
         if constexpr (std::is_same_v<T, c10::Half>) {
+#if defined(__SSE2__)
             using Register = __m128i;
             static constexpr int64_t kHalfsPerRegister = 8;
             static const Register kSignBit = _mm_set1_epi16(0x8000);
@@ -155,13 +159,25 @@ SampleRanges<T> detect_pore_signal(const at::Tensor& signal,
             static const Register kOne = _mm_set1_epi16(1);
 
             const Register fast_threshold = _mm_set1_epi16(detail::fast_half_comparable(threshold));
+#else
+            using Register = float16x8_t;
+            static constexpr int64_t kHalfsPerRegister = 8;
+
+            const Register threshold_splat = vdupq_n_f16(threshold);
+#endif
 
             // |idx| isn't necessarily a multiple of |kHalfsPerRegister| since we don't know where the last open pore
             // ended, so we always have to check for enough space (no (x/8)*8 trickery).
             for (; idx < pore_a_size - kHalfsPerRegister; idx += kHalfsPerRegister) {
                 // Load 8 halfs into a register.
-                Register halfs = _mm_loadu_si128((const __m128i_u*)(pore_a_data + idx));
+#if defined(__SSE2__)
+                Register halfs =
+                        _mm_loadu_si128(reinterpret_cast<const __m128i_u*>(pore_a_data + idx));
+#else
+                Register halfs = vld1q_f16(reinterpret_cast<float16_t const*>(pore_a_data + idx));
+#endif
 
+#if defined(__SSE2__)
                 // SIMD version of fast_half_comparable().
                 Register sign = _mm_and_si128(halfs, kSignBit);
                 Register em = _mm_and_si128(halfs, kExpManMask);
@@ -176,12 +192,25 @@ SampleRanges<T> detect_pore_signal(const at::Tensor& signal,
 
                 // over_threshold() comparison.
                 const uint16_t cmp = _mm_movemask_epi8(_mm_cmpgt_epi16(vals, fast_threshold));
+#else
+                // Taken from here: https://developer.arm.com/community/arm-community-blogs/b/servers-and-cloud-computing-blog/posts/porting-x86-vector-bitmask-optimizations-to-arm-neon
+                const uint16x8_t mask = vcgtq_f16(halfs, threshold_splat);
+                const uint8x8_t res = vshrn_n_u16(mask, 4);
+                const uint64_t cmp = vget_lane_u64(vreinterpret_u64_u8(res), 0);
+#endif
 
                 // If any of them are set then we've found a match.
                 if (cmp != 0) [[unlikely]] {
+#if defined(__SSE2__)
                     // Each bit in |cmp| corresponds to a byte in the register,
                     // so an int16 comparison takes 2 bits per element.
-                    const int first_set = std::countr_zero(cmp) / 2;
+                    constexpr std::size_t shift = 1;
+#else
+                    // On the ARM path you get 4 bits per byte, which is 8 bits
+                    // per element.
+                    constexpr std::size_t shift = 3;
+#endif
+                    const int first_set = std::countr_zero(cmp) >> shift;
                     idx += first_set;
                     cl_start = idx;
                     break;
