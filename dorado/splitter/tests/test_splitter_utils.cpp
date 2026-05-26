@@ -1,6 +1,7 @@
 #include "splitter_utils.h"
 
 #include <ATen/ops/from_blob.h>
+#include <catch2/benchmark/catch_benchmark.hpp>
 #include <catch2/catch_template_test_macros.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
@@ -246,6 +247,38 @@ DEFINE_TEMPLATE_TEST("detect_pore_signal() big input, spikes", int16_t, float, c
         }
     }
 }
+
+#if DORADO_ENABLE_BENCHMARK_TESTS
+DEFINE_TEST("Benchmark detect_pore_signal()") {
+    constexpr auto dtype = get_dtype<c10::Half>();
+    const auto options = at::TensorOptions().dtype(dtype);
+
+    const std::size_t max_size = GENERATE(100, 10'000, 1'000'000, 10'000'000);
+    const float range = 20;  // using range as threshold
+    std::minstd_rand rng;
+    std::uniform_real_distribution<float> dist(-range, range);
+
+    // Create a signal that stays below the threshold.
+    std::vector<c10::Half> input(max_size);
+    std::generate(input.begin(), input.end(), [&] { return static_cast<c10::Half>(dist(rng)); });
+
+    // Add some spikes.
+    {
+        std::uniform_int_distribution<> idist(1, std::sqrt(max_size));
+        std::size_t idx = 0;
+        while (idx < max_size) {
+            input.at(idx) = range + 1;
+            idx += idist(rng);
+        }
+    }
+
+    // Run the benchmark.
+    const auto signal = at::from_blob(std::data(input), std::size(input), options);
+    CATCH_BENCHMARK(std::format("size={}", max_size)) {
+        detect_pore_signal<c10::Half>(signal, range, 0, 0, 0);
+    };
+}
+#endif
 
 DEFINE_TEST("fast_half_comparable()") {
     using dorado::splitter::detail::fast_half_comparable;
