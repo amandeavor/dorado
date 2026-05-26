@@ -171,6 +171,24 @@ DEFINE_TEMPLATE_TEST("detect_pore_signal() smoke test", int16_t, float, c10::Hal
                                     SampleRange<TestType>(0, 6, 3, 2),
                             },
             },
+
+            // long input
+            {
+                    .name = "long input",
+                    .input = {3, 1, 4, 1, 5, 9, 2, 6, 5, 3, 5, 8, 9, 7, 9, 3, 2, 3, 8, 4, 6},
+                    .threshold = 5,
+                    .cluster_dist = 0,
+                    .ignore_prefix = 0,
+                    .ignore_spikes_threshold = 0,
+                    .expected =
+                            {
+                                    SampleRange<TestType>(5, 6, 5, 9),
+                                    SampleRange<TestType>(7, 8, 7, 6),
+                                    SampleRange<TestType>(11, 15, 14, 9),
+                                    SampleRange<TestType>(18, 19, 18, 8),
+                                    SampleRange<TestType>(20, 21, 20, 6),
+                            },
+            },
     };
 
     for (auto &test : tests) {
