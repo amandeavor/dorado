@@ -61,9 +61,12 @@ variables:
 
 .linux_arm64_runner:
   tags:
-    - linux_aarch64
-    - docker-arm
-    - aws
+    - linux
+    - prod
+    - arm64
+    - eks
+    - 2xlarge
+    - standard
 
 .linux_orin_cuda_12_runner:
   tags:
