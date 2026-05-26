@@ -7,6 +7,7 @@
 #include "hts_utils/FastxRandomReader.h"
 #include "hts_utils/hts_types.h"
 #include "read_pipeline/base/messages/CorrectionAlignments.h"
+#include "secondary/architectures/model_herro.h"
 #include "torch_utils/gpu_profiling.h"
 #include "utils/string_utils.h"
 #include "utils/thread_utils.h"
@@ -16,12 +17,12 @@
 #include <htslib/sam.h>
 #include <minimap.h>
 #include <spdlog/spdlog.h>
-#include <torch/script.h>
 
 #include <cassert>
 #include <filesystem>
 #include <stdexcept>
 #include <string>
+#include <tuple>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -107,6 +108,17 @@ std::vector<std::string> concatenate_corrected_windows(const std::vector<std::st
     return corrected_seqs;
 }
 
+void validate_herro_model_config(const dorado::correction::ModelConfig& config) {
+    if ((config.model_type != "ModelHerro") && (config.model_type != "torchscript") &&
+        (config.model_type != "herro")) {
+        throw std::runtime_error("Unsupported correction model type: " + config.model_type);
+    }
+    if (config.version != 1) {
+        throw std::runtime_error("Unsupported Herro model version: " +
+                                 std::to_string(config.version));
+    }
+}
+
 }  // namespace
 
 namespace dorado {
@@ -184,17 +196,13 @@ void CorrectionInferenceNode::infer_fn(const std::string& device_str, int mtx_id
 
     at::InferenceMode infer_guard;
 
-    auto model_path = (m_model_config.model_dir / m_model_config.weights_file).string();
-    torch::jit::script::Module module;
-    try {
-        spdlog::debug("Loading model on {}...", device_str);
-        module = torch::jit::load(model_path, device);
-        spdlog::debug("Loaded model on {}!", device_str);
-    } catch (const c10::Error& e) {
-        throw std::runtime_error("Error loading model from " + model_path +
-                                 " with error: " + e.what());
-    }
-    module.eval();
+    spdlog::debug("Loading model on {}...", device_str);
+    validate_herro_model_config(m_model_config);
+    std::shared_ptr<secondary::ModelHerro> model =
+            secondary::load_model_herro(m_model_config.model_dir / m_model_config.weights_file);
+    model->eval();
+    model->to(device);
+    spdlog::debug("Loaded model on {}!", device_str);
 
     std::vector<at::Tensor> bases_batch;
     std::vector<at::Tensor> quals_batch;
@@ -246,37 +254,38 @@ void CorrectionInferenceNode::infer_fn(const std::string& device_str, int mtx_id
         thread_bases.join();
         thread_quals.join();
 
-        std::vector<torch::jit::IValue> inputs;
+        at::Tensor batched_bases_device;
+        at::Tensor batched_quals_device;
+        at::Tensor length_tensor_device;
         {
             const bool non_blocking = !m_legacy_windowing;
             utils::ScopedProfileRange move_to_device("move_to_device", 1);
-            inputs.push_back(batched_bases.to(device, non_blocking));
-            inputs.push_back(batched_quals.to(device, non_blocking));
-            inputs.push_back(length_tensor.to(device, non_blocking));
-            std::for_each(indices_batch.begin(), indices_batch.end(),
-                          [device, non_blocking](at::Tensor& t) { t.to(device, non_blocking); });
-            inputs.push_back(indices_batch);
+            batched_bases_device = batched_bases.to(device, non_blocking);
+            batched_quals_device = batched_quals.to(device, non_blocking);
+            length_tensor_device = length_tensor.to(device, non_blocking);
+            std::for_each(
+                    indices_batch.begin(), indices_batch.end(),
+                    [device, non_blocking](at::Tensor& t) { t = t.to(device, non_blocking); });
         }
 
         std::unique_lock<std::mutex> lock(m_gpu_mutexes.at(mtx_idx));
 
-        c10::IValue output;
+        std::tuple<at::Tensor, at::Tensor> output;
         try {
-            output = module.forward(inputs);
+            output = model->forward(batched_bases_device, batched_quals_device,
+                                    length_tensor_device, indices_batch);
         } catch (std::runtime_error& e) {
 #if DORADO_CUDA_BUILD
             spdlog::warn("Caught Torch error '{}', clearing CUDA cache and retrying.", e.what());
             c10::cuda::CUDACachingAllocator::emptyCache();
-            output = module.forward(inputs);
+            output = model->forward(batched_bases_device, batched_quals_device,
+                                    length_tensor_device, indices_batch);
 #else
             throw e;
 #endif
         }
         lock.unlock();
-        if (!output.isTuple()) {
-            throw std::runtime_error("Expected inference result to be tuple.");
-        }
-        auto base_logits = output.toTuple()->elements()[1].toTensor();
+        auto base_logits = std::get<1>(output);
         auto preds = base_logits.argmax(1, false).to(torch::kCPU);
         auto split_preds = preds.split_with_sizes(sizes);
         for (size_t w = 0; w < split_preds.size(); w++) {

@@ -6,6 +6,7 @@ target_sources(dorado_secondary
         ${PUBLIC_BASE}/model_factory.h
         ${PUBLIC_BASE}/model_config.h
         ${PUBLIC_BASE}/model_config_validation.h
+        ${PUBLIC_BASE}/model_herro.h
     PRIVATE
         flash_attention_module.cpp
         flash_attention_module.h
@@ -16,6 +17,7 @@ target_sources(dorado_secondary
         model_factory.cpp
         model_gru.cpp
         model_gru.h
+        model_herro.cpp
         model_latent_space_lstm.cpp
         model_latent_space_lstm.h
         model_slot_attention_consensus.cpp
