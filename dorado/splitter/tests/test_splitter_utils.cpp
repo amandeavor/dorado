@@ -6,6 +6,7 @@
 #include <catch2/generators/catch_generators.hpp>
 
 #include <limits>
+#include <random>
 #include <set>
 
 #define CUT_TAG "[splitter_utils]"
@@ -197,6 +198,29 @@ DEFINE_TEMPLATE_TEST("detect_pore_signal() smoke test", int16_t, float, c10::Hal
         auto peaks = detect_pore_signal<TestType>(signal, test.threshold, test.cluster_dist,
                                                   test.ignore_prefix, test.ignore_spikes_threshold);
         check_equal(test.expected, peaks);
+    }
+}
+
+DEFINE_TEMPLATE_TEST("detect_pore_signal() big input, single spike", int16_t, float, c10::Half) {
+    constexpr auto dtype = get_dtype<TestType>();
+    const auto options = at::TensorOptions().dtype(dtype);
+
+    const std::size_t max_size = 100;
+    const float range = 20;  // using range as threshold
+    std::minstd_rand rng;
+    std::uniform_real_distribution<float> dist(-range, range - 1);
+
+    for (std::size_t idx = 0; idx < max_size; idx++) {
+        CATCH_CAPTURE(idx);
+
+        // Single spike at idx.
+        std::vector<TestType> input(max_size);
+        std::generate(input.begin(), input.end(), [&] { return static_cast<TestType>(dist(rng)); });
+        input[idx] = range * 2;
+
+        const auto signal = at::from_blob(std::data(input), std::size(input), options);
+        auto peaks = detect_pore_signal<TestType>(signal, range, 0, 0, 0);
+        check_equal({SampleRange<TestType>(idx, idx + 1, idx, input[idx])}, peaks);
     }
 }
 
