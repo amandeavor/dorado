@@ -5,6 +5,7 @@
 #include <catch2/catch_template_test_macros.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
+#include <spdlog/spdlog.h>
 
 #include <limits>
 #include <random>
@@ -274,7 +275,7 @@ DEFINE_TEST("Benchmark detect_pore_signal()") {
 
     // Run the benchmark.
     const auto signal = at::from_blob(std::data(input), std::size(input), options);
-    CATCH_BENCHMARK(std::format("size={}", max_size)) {
+    CATCH_BENCHMARK(fmt::format("detect_pore_signal: size={}", max_size)) {
         detect_pore_signal<c10::Half>(signal, range, 0, 0, 0);
     };
 }
