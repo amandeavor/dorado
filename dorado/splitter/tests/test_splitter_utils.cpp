@@ -231,7 +231,7 @@ DEFINE_TEMPLATE_TEST("detect_pore_signal() big input, spikes", int16_t, float, c
                 // Both the same spike.
                 const std::size_t idx = spike_idx_1;
                 expected.push_back(SampleRange<TestType>(idx, idx + 1, idx, input[idx]));
-            } else if (spike_idx_1 == spike_idx_2 + 1 || spike_idx_2 == spike_idx_1 + 1) {
+            } else if ((spike_idx_1 == spike_idx_2 + 1) || (spike_idx_2 == spike_idx_1 + 1)) {
                 // Close enough that they combine together.
                 const std::size_t start = std::min(spike_idx_1, spike_idx_2);
                 const std::size_t end = std::max(spike_idx_1, spike_idx_2);
