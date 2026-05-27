@@ -1,11 +1,14 @@
 #include "splitter_utils.h"
 
 #include <ATen/ops/from_blob.h>
+#include <catch2/benchmark/catch_benchmark.hpp>
 #include <catch2/catch_template_test_macros.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
+#include <spdlog/spdlog.h>
 
 #include <limits>
+#include <random>
 #include <set>
 
 #define CUT_TAG "[splitter_utils]"
@@ -171,6 +174,24 @@ DEFINE_TEMPLATE_TEST("detect_pore_signal() smoke test", int16_t, float, c10::Hal
                                     SampleRange<TestType>(0, 6, 3, 2),
                             },
             },
+
+            // long input
+            {
+                    .name = "long input",
+                    .input = {3, 1, 4, 1, 5, 9, 2, 6, 5, 3, 5, 8, 9, 7, 9, 3, 2, 3, 8, 4, 6},
+                    .threshold = 5,
+                    .cluster_dist = 0,
+                    .ignore_prefix = 0,
+                    .ignore_spikes_threshold = 0,
+                    .expected =
+                            {
+                                    SampleRange<TestType>(5, 6, 5, 9),
+                                    SampleRange<TestType>(7, 8, 7, 6),
+                                    SampleRange<TestType>(11, 15, 14, 9),
+                                    SampleRange<TestType>(18, 19, 18, 8),
+                                    SampleRange<TestType>(20, 21, 20, 6),
+                            },
+            },
     };
 
     for (auto &test : tests) {
@@ -181,6 +202,84 @@ DEFINE_TEMPLATE_TEST("detect_pore_signal() smoke test", int16_t, float, c10::Hal
         check_equal(test.expected, peaks);
     }
 }
+
+DEFINE_TEMPLATE_TEST("detect_pore_signal() big input, spikes", int16_t, float, c10::Half) {
+    constexpr auto dtype = get_dtype<TestType>();
+    const auto options = at::TensorOptions().dtype(dtype);
+
+    const std::size_t max_size = 100;
+    const float range = 20;  // using range as threshold
+    std::minstd_rand rng;
+    std::uniform_real_distribution<float> dist(-range, range);
+
+    for (std::size_t spike_idx_1 = 0; spike_idx_1 < max_size; spike_idx_1++) {
+        for (std::size_t spike_idx_2 = 0; spike_idx_2 < max_size; spike_idx_2++) {
+            CATCH_CAPTURE(spike_idx_1, spike_idx_2);
+
+            // Add both spikes. It's intentional for both to sometimes overlap.
+            std::vector<TestType> input(max_size);
+            std::generate(input.begin(), input.end(),
+                          [&] { return static_cast<TestType>(dist(rng)); });
+            input[spike_idx_1] = range + 1;
+            input[spike_idx_2] = range + 1;
+
+            const auto signal = at::from_blob(std::data(input), std::size(input), options);
+            const auto peaks = detect_pore_signal<TestType>(signal, range, 0, 0, 0);
+
+            SampleRanges<TestType> expected;
+            if (spike_idx_1 == spike_idx_2) {
+                // Both the same spike.
+                const std::size_t idx = spike_idx_1;
+                expected.push_back(SampleRange<TestType>(idx, idx + 1, idx, input[idx]));
+            } else if ((spike_idx_1 == spike_idx_2 + 1) || (spike_idx_2 == spike_idx_1 + 1)) {
+                // Close enough that they combine together.
+                const std::size_t start = std::min(spike_idx_1, spike_idx_2);
+                const std::size_t end = std::max(spike_idx_1, spike_idx_2);
+                expected.push_back(SampleRange<TestType>(start, end + 1, end, input[end]));
+            } else {
+                // 2 unique spikes.
+                std::array<std::size_t, 2> spikes{spike_idx_1, spike_idx_2};
+                std::sort(spikes.begin(), spikes.end());
+                for (std::size_t i : spikes) {
+                    expected.push_back(SampleRange<TestType>(i, i + 1, i, input[i]));
+                }
+            }
+            check_equal(expected, peaks);
+        }
+    }
+}
+
+#if DORADO_ENABLE_BENCHMARK_TESTS
+DEFINE_TEST("Benchmark detect_pore_signal()") {
+    constexpr auto dtype = get_dtype<c10::Half>();
+    const auto options = at::TensorOptions().dtype(dtype);
+
+    const std::size_t max_size = GENERATE(100, 10'000, 1'000'000, 10'000'000);
+    const float range = 20;  // using range as threshold
+    std::minstd_rand rng;
+    std::uniform_real_distribution<float> dist(-range, range);
+
+    // Create a signal that stays below the threshold.
+    std::vector<c10::Half> input(max_size);
+    std::generate(input.begin(), input.end(), [&] { return static_cast<c10::Half>(dist(rng)); });
+
+    // Add some spikes.
+    {
+        std::uniform_int_distribution<> idist(1, std::sqrt(max_size));
+        std::size_t idx = 0;
+        while (idx < max_size) {
+            input.at(idx) = range + 1;
+            idx += idist(rng);
+        }
+    }
+
+    // Run the benchmark.
+    const auto signal = at::from_blob(std::data(input), std::size(input), options);
+    CATCH_BENCHMARK(fmt::format("detect_pore_signal: size={}", max_size)) {
+        detect_pore_signal<c10::Half>(signal, range, 0, 0, 0);
+    };
+}
+#endif
 
 DEFINE_TEST("fast_half_comparable()") {
     using dorado::splitter::detail::fast_half_comparable;

@@ -6,6 +6,15 @@
 
 #include <ATen/TensorIndexing.h>
 
+#include <bit>
+#include <type_traits>
+
+#if defined(__SSE2__)
+#include <x86intrin.h>
+#elif defined(__ARM_NEON__)
+#include <arm_neon.h>
+#endif
+
 namespace dorado::splitter {
 namespace {
 // This part of subread() is split out into its own unoptimised function since not doing so
@@ -104,5 +113,198 @@ PosRanges merge_ranges(const PosRanges& ranges, uint64_t merge_dist) {
     }
     return merged;
 }
+
+template <typename T>
+SampleRanges<T> detect_pore_signal(const at::Tensor& signal,
+                                   T threshold,
+                                   uint64_t cluster_dist,
+                                   uint64_t ignore_prefix,
+                                   uint64_t ignore_spikes_threshold) {
+    SampleRanges<T> clusters;
+
+#if C10_ASAN_ENABLED
+    // For some reason mold has issues finding the const version of this symbol when sanitizers are enabled.
+    const auto pore_a = signal.accessor<T, 1>();
+#else
+    const auto pore_a = signal.accessor<const T, 1>();
+#endif
+    const auto pore_a_data = pore_a.data();
+    const int64_t pore_a_size = pore_a.size(0);
+    TORCH_CHECK(signal.stride(0) == 1, "signal should be contiguous");
+
+    const auto over_threshold = [threshold](const T& val) {
+    // ARM64 has native _Half support but x64 doesn't and has to convert a c10::Half
+    // to a single precision float to compare them, so use a fast comparison since we
+    // likely won't need the single precision float afterwards.
+#if !defined(__aarch64__)
+        if constexpr (std::is_same_v<T, c10::Half>) {
+            return detail::fast_half_comparable(val) > detail::fast_half_comparable(threshold);
+        }
+#endif
+        return val > threshold;
+    };
+
+    int64_t idx = ignore_prefix;
+    while (idx < pore_a_size) {
+        int64_t cl_start = -1;
+
+        // Most of the time is spent looking for the start of a peak, so make that hot loop tight.
+#if defined(__SSE2__) || defined(__ARM_NEON__)
+        if constexpr (std::is_same_v<T, c10::Half>) {
+#if defined(__SSE2__)
+            using Register = __m128i;
+            static constexpr int64_t kHalfsPerRegister = 8;
+            static const Register kSignBit = _mm_set1_epi16(0x8000);
+            static const Register kExpManMask = _mm_set1_epi16(0x7FFF);
+            static const Register kOne = _mm_set1_epi16(1);
+
+            const Register fast_threshold = _mm_set1_epi16(detail::fast_half_comparable(threshold));
+#else
+            using Register = float16x8_t;
+            static constexpr int64_t kHalfsPerRegister = 8;
+
+            const Register threshold_splat = vdupq_n_f16(threshold);
+#endif
+
+            // |idx| isn't necessarily a multiple of |kHalfsPerRegister| since we don't know where the last open pore
+            // ended, so we always have to check for enough space (no (x/8)*8 trickery).
+            for (; idx < pore_a_size - kHalfsPerRegister; idx += kHalfsPerRegister) {
+                // Load 8 halfs into a register.
+#if defined(__SSE2__)
+                Register halfs =
+                        _mm_loadu_si128(reinterpret_cast<const __m128i_u*>(pore_a_data + idx));
+#else
+                Register halfs = vld1q_f16(reinterpret_cast<float16_t const*>(pore_a_data + idx));
+#endif
+
+#if defined(__SSE2__)
+                // SIMD version of fast_half_comparable().
+                Register sign = _mm_and_si128(halfs, kSignBit);
+                Register em = _mm_and_si128(halfs, kExpManMask);
+                // We emulate |vals = sign ? -em : em| by doing |vals = sign * em| instead.
+                // TODO: if we had SSSE3 support we could use _mm_sign_epi16() instead.
+                // |sign| will either be 0x8000 or 0 depending on if the sign bit is set.
+                // We need to map these to -1 or 1 respectively, which we can do with a shift and a sub.
+                // 1 - (0x8000 >> 14) = -1
+                // 1 - (0x0000 >> 14) = 1
+                Register mul = _mm_sub_epi16(kOne, _mm_srli_epi16(sign, 14));
+                Register vals = _mm_mullo_epi16(mul, em);
+
+                // over_threshold() comparison.
+                const uint16_t cmp = _mm_movemask_epi8(_mm_cmpgt_epi16(vals, fast_threshold));
+#else
+                // Taken from here: https://developer.arm.com/community/arm-community-blogs/b/servers-and-cloud-computing-blog/posts/porting-x86-vector-bitmask-optimizations-to-arm-neon
+                const uint16x8_t mask = vcgtq_f16(halfs, threshold_splat);
+                const uint8x8_t res = vshrn_n_u16(mask, 4);
+                const uint64_t cmp = vget_lane_u64(vreinterpret_u64_u8(res), 0);
+#endif
+
+                // If any of them are set then we've found a match.
+                if (cmp != 0) [[unlikely]] {
+#if defined(__SSE2__)
+                    // Each bit in |cmp| corresponds to a byte in the register,
+                    // so an int16 comparison takes 2 bits per element.
+                    constexpr std::size_t shift = 1;
+#else
+                    // On the ARM path you get 4 bits per byte, which is 8 bits
+                    // per element.
+                    constexpr std::size_t shift = 3;
+#endif
+                    const int first_set = std::countr_zero(cmp) >> shift;
+                    idx += first_set;
+                    cl_start = idx;
+                    break;
+                }
+            }
+        }
+
+        // Search the rest linearly if we haven't found one.
+        if (cl_start == -1)
+#endif
+        {
+            for (; idx < pore_a_size; idx++) {
+                const T sample = pore_a_data[idx];
+                if (over_threshold(sample)) {
+                    cl_start = idx;
+                    break;
+                }
+            }
+        }
+        if (cl_start == -1) {
+            // No peak found.
+            break;
+        }
+
+        // Grab the start position.
+        int64_t cl_argmax = idx++;
+        T cl_max = pore_a_data[cl_argmax];
+
+        // Read until end of the peak.
+        for (; idx < pore_a_size; idx++) {
+            const T sample = pore_a_data[idx];
+            if (!over_threshold(sample)) {
+                break;
+            }
+            if (sample >= cl_max) {
+                cl_max = sample;
+                cl_argmax = idx;
+            }
+        }
+
+        // Grab the end position.
+        // Note that it's safe to increment |idx| here since |cl_end| is the first index
+        // after the peak, and hence we don't need to test |idx| again to see if it's above
+        // the threshold.
+        const int64_t cl_end = idx++;
+
+        // report cluster
+        assert(cl_start < pore_a_size && cl_end <= pore_a_size);
+        clusters.push_back(SampleRange(cl_start, cl_end, cl_argmax, cl_max));
+    }
+
+    // merge clusters
+    SampleRanges<T> merged_clusters;
+    for (auto&& cluster : clusters) {
+        if (cluster.end_sample - cluster.start_sample < ignore_spikes_threshold) {
+            // discard spurious clusters
+            continue;
+        }
+
+        if (merged_clusters.empty()) {
+            merged_clusters.push_back(std::move(cluster));
+            continue;
+        }
+
+        auto& last_cluster = merged_clusters.back();
+        if (cluster.start_sample - last_cluster.end_sample > cluster_dist) {
+            // new cluster is too far away to merge, just accept it
+            merged_clusters.push_back(std::move(cluster));
+        } else {
+            // extend previous cluster and update metadata
+            last_cluster.end_sample = cluster.end_sample;
+            if (cluster.max_val >= last_cluster.max_val) {
+                last_cluster.max_val = cluster.max_val;
+                last_cluster.argmax_sample = cluster.argmax_sample;
+            }
+        }
+    }
+
+    return merged_clusters;
+}
+template SampleRanges<c10::Half> detect_pore_signal(const at::Tensor& signal,
+                                                    c10::Half threshold,
+                                                    uint64_t cluster_dist,
+                                                    uint64_t ignore_prefix,
+                                                    uint64_t ignore_spikes_threshold);
+template SampleRanges<float> detect_pore_signal(const at::Tensor& signal,
+                                                float threshold,
+                                                uint64_t cluster_dist,
+                                                uint64_t ignore_prefix,
+                                                uint64_t ignore_spikes_threshold);
+template SampleRanges<int16_t> detect_pore_signal(const at::Tensor& signal,
+                                                  int16_t threshold,
+                                                  uint64_t cluster_dist,
+                                                  uint64_t ignore_prefix,
+                                                  uint64_t ignore_spikes_threshold);
 
 }  // namespace dorado::splitter
