@@ -9,8 +9,14 @@
 #include <bit>
 #include <type_traits>
 
+// MSVC doesn't define __SSE2__ so we have to do it ourselves.
+#if defined(_M_AMD64)
+#define __SSE2__
+#define __m128i_u __m128i  // MSVC doesn't provide an unaligned typedef
+#endif
+
 #if defined(__SSE2__)
-#include <x86intrin.h>
+#include <immintrin.h>
 #elif defined(__ARM_NEON__)
 #include <arm_neon.h>
 #endif
