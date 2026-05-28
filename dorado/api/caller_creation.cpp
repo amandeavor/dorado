@@ -20,14 +20,7 @@ std::shared_ptr<basecall::CudaCaller> create_cuda_caller(
 std::shared_ptr<basecall::MetalCaller> create_metal_caller(
         const config::BasecallModelConfig& model_config,
         float memory_limit_fraction) {
-    if (model_config.is_tx_model()) {
-        return std::make_shared<basecall::MetalTxCaller>(model_config);
-    } else if (model_config.is_lstm_model()) {
-        return std::make_shared<basecall::MetalLSTMCaller>(model_config, memory_limit_fraction);
-    } else {
-        throw std::runtime_error("No metal runner available for model: " +
-                                 model_config.model_name());
-    }
+    return basecall::MetalCaller::create(model_config, memory_limit_fraction);
 }
 #endif
 

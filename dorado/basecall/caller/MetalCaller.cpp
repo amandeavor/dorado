@@ -1,6 +1,8 @@
 #include "basecall/MetalCaller.h"
 
 #include "MetalCallerTask.h"
+#include "MetalLSTMCaller.h"
+#include "MetalTxCaller.h"
 #include "torch_utils/metal_utils.h"
 #include "utils/thread_utils.h"
 
@@ -18,7 +20,44 @@ using namespace std::chrono_literals;
 
 namespace dorado::basecall {
 
+std::shared_ptr<MetalCaller> MetalCaller::create(const config::BasecallModelConfig &model_config,
+                                                 float memory_limit_fraction) {
+    if (model_config.is_tx_model()) {
+        return std::make_shared<MetalTxCaller>(model_config);
+    } else if (model_config.is_lstm_model()) {
+        return std::make_shared<MetalLSTMCaller>(model_config, memory_limit_fraction);
+    } else {
+        throw std::runtime_error("No metal caller available for model: " +
+                                 model_config.model_name());
+    }
+}
+
 MetalCaller::~MetalCaller() { terminate(); }
+
+int MetalCaller::get_max_safe_batch_size(float memory_limit_fraction,
+                                         const config::BasecallModelConfig &model_config) {
+    if (model_config.is_tx_model()) {
+        return basecall::MetalTxCaller::get_max_safe_batch_size(memory_limit_fraction,
+                                                                model_config);
+    } else if (model_config.is_lstm_model()) {
+        return basecall::MetalLSTMCaller::get_max_safe_batch_size(memory_limit_fraction,
+                                                                  model_config);
+    } else {
+        throw std::runtime_error("No metal caller available for model: " +
+                                 model_config.model_name());
+    }
+}
+
+int MetalCaller::get_batch_size_granularity(const config::BasecallModelConfig &model_config) {
+    if (model_config.is_tx_model()) {
+        return basecall::MetalTxCaller::get_batch_size_granularity();
+    } else if (model_config.is_lstm_model()) {
+        return basecall::MetalLSTMCaller::get_batch_size_granularity();
+    } else {
+        throw std::runtime_error("No metal caller available for model: " +
+                                 model_config.model_name());
+    }
+}
 
 void MetalCaller::call_chunks(at::Tensor &input,
                               int num_chunks,

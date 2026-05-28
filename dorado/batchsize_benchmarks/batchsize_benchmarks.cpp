@@ -174,8 +174,7 @@ int get_batch_size_granularity(const config::BasecallModelConfig &config) {
 #if DORADO_CUDA_BUILD
     return basecall::CudaCaller::get_batch_size_granularity(config);
 #elif DORADO_METAL_BUILD
-    return config.is_lstm_model() ? basecall::MetalLSTMCaller::get_batch_size_granularity()
-                                  : basecall::MetalTxCaller::get_batch_size_granularity();
+    return basecall::MetalCaller::get_batch_size_granularity(config);
 #else
 #error "Invalid build"
 #endif
@@ -186,8 +185,7 @@ int get_max_safe_batch_size(const std::string &device, const config::BasecallMod
     return basecall::CudaCaller::get_max_safe_batch_size(device, 1, config);
 #elif DORADO_METAL_BUILD
     (void)device;
-    return config.is_lstm_model() ? basecall::MetalLSTMCaller::get_max_safe_batch_size(1, config)
-                                  : basecall::MetalTxCaller::get_max_safe_batch_size(1, config);
+    return basecall::MetalCaller::get_max_safe_batch_size(1, config);
 #else
 #error "Invalid build"
 #endif
