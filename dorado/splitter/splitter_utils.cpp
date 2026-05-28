@@ -160,7 +160,7 @@ SampleRanges<T> detect_pore_signal(const at::Tensor& signal,
 #if defined(__SSE2__)
             using Register = __m128i;
             static constexpr int64_t kHalfsPerRegister = 8;
-            static const Register kSignBit = _mm_set1_epi16(0x8000);
+            static const Register kSignBit = _mm_set1_epi16(static_cast<short>(0x8000));
             static const Register kExpManMask = _mm_set1_epi16(0x7FFF);
             static const Register kOne = _mm_set1_epi16(1);
 
