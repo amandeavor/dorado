@@ -9,8 +9,14 @@
 #include <bit>
 #include <type_traits>
 
+// MSVC doesn't define __SSE2__ so we have to do it ourselves.
+#if defined(_M_AMD64)
+#define __SSE2__
+#define __m128i_u __m128i  // MSVC doesn't provide an unaligned typedef
+#endif
+
 #if defined(__SSE2__)
-#include <x86intrin.h>
+#include <immintrin.h>
 #elif defined(__ARM_NEON__)
 #include <arm_neon.h>
 #endif
@@ -154,7 +160,7 @@ SampleRanges<T> detect_pore_signal(const at::Tensor& signal,
 #if defined(__SSE2__)
             using Register = __m128i;
             static constexpr int64_t kHalfsPerRegister = 8;
-            static const Register kSignBit = _mm_set1_epi16(0x8000);
+            static const Register kSignBit = _mm_set1_epi16(static_cast<short>(0x8000));
             static const Register kExpManMask = _mm_set1_epi16(0x7FFF);
             static const Register kOne = _mm_set1_epi16(1);
 
