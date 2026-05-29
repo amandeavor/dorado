@@ -45,8 +45,8 @@ if(APPLE)
             caller/MetalCaller.cpp
             caller/MetalLSTMCaller.cpp
             caller/MetalLSTMCaller.h
-            caller/MetalTxCaller.cpp
-            caller/MetalTxCaller.h
+            caller/MPSCaller.cpp
+            caller/MPSCaller.h
             MetalModelRunner.cpp
             model/MetalCRFModel.cpp
             model/MetalCRFModel.h

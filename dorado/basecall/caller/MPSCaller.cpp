@@ -1,4 +1,4 @@
-#include "MetalTxCaller.h"
+#include "MPSCaller.h"
 
 #include "MetalCallerTask.h"
 #include "basecall/crf_utils.h"
@@ -26,7 +26,7 @@ at::TensorOptions get_crf_options() {
     return at::TensorOptions().device(at::kMPS).dtype(at::kHalf);
 }
 
-CREATE_POINT_OF_INTEREST_ID(MetalTxCaller);
+CREATE_POINT_OF_INTEREST_ID(MPSCaller);
 
 }  // namespace
 
@@ -34,11 +34,11 @@ namespace dorado::basecall {
 
 using namespace config;
 
-MetalTxCaller::MetalTxCaller(const BasecallModelConfig &model_config) : MetalCaller(model_config) {
+MPSCaller::MPSCaller(const BasecallModelConfig &model_config) : MetalCaller(model_config) {
     ScopedAutoReleasePool autorelease_pool;
 
     if (!model_config.is_tx_model()) {
-        throw std::logic_error("MetalTxCaller got invalid model config");
+        throw std::logic_error("MPSCaller got invalid model config");
     }
 
     // Our metal builds assume shared memory, so it's safe to check host.
@@ -115,22 +115,22 @@ MetalTxCaller::MetalTxCaller(const BasecallModelConfig &model_config) : MetalCal
     start_threads();
 }
 
-MetalTxCaller::~MetalTxCaller() = default;
+MPSCaller::~MPSCaller() = default;
 
-at::Tensor MetalTxCaller::create_input_tensor() const {
+at::Tensor MPSCaller::create_input_tensor() const {
     // NCT
     return at::zeros({m_batch_size, m_config.num_features, m_in_chunk_size}, at::kHalf);
 }
 
-int MetalTxCaller::get_max_safe_batch_size(float, const config::BasecallModelConfig &) {
+int MPSCaller::get_max_safe_batch_size(float, const config::BasecallModelConfig &) {
     // TODO: better number here
     return 32;
 }
 
-int MetalTxCaller::get_batch_size_granularity() { return 8; }
+int MPSCaller::get_batch_size_granularity() { return 8; }
 
-bool MetalTxCaller::run_scan_kernels(MTL::CommandBuffer *const cb, int try_count) {
-    POINT_OF_INTEREST_SCOPE(MetalTxCaller, run_scan_kernels, "try_count=%i", try_count);
+bool MPSCaller::run_scan_kernels(MTL::CommandBuffer *const cb, int try_count) {
+    POINT_OF_INTEREST_SCOPE(MPSCaller, run_scan_kernels, "try_count=%i", try_count);
 
     // ScanArgs expects scores TNC tensor sizes
     std::vector<int32_t> scan_args_{m_out_chunk_size, m_batch_size, m_states};
@@ -151,7 +151,7 @@ bool MetalTxCaller::run_scan_kernels(MTL::CommandBuffer *const cb, int try_count
     return run_command_buffer("linear/scan/softmax", cb, try_count);
 }
 
-bool MetalTxCaller::call_task(NNTask &task, std::mutex &inter_caller_mutex, int try_count) {
+bool MPSCaller::call_task(NNTask &task, std::mutex &inter_caller_mutex, int try_count) {
     auto scores_TNC = m_model->forward(task.input->to(get_crf_options()))
                               .transpose(0, 1)
                               .contiguous()
@@ -170,8 +170,8 @@ bool MetalTxCaller::call_task(NNTask &task, std::mutex &inter_caller_mutex, int 
     return run_scan_kernels(cb, try_count);
 }
 
-DecodedData MetalTxCaller::decode(int chunk_idx) const {
-    POINT_OF_INTEREST_SCOPE(MetalTxCaller, decode, "chunk_idx=%i", chunk_idx);
+DecodedData MPSCaller::decode(int chunk_idx) const {
+    POINT_OF_INTEREST_SCOPE(MPSCaller, decode, "chunk_idx=%i", chunk_idx);
 
     // Not splitting batches in Tx impl so chunk idx should be in [0, N)
     assert(chunk_idx < m_batch_size);
