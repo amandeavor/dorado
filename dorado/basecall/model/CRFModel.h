@@ -7,7 +7,6 @@
 
 #include <torch/nn.h>
 
-#include <memory>
 #include <vector>
 
 namespace dorado::config {
@@ -17,7 +16,7 @@ struct BasecallModelConfig;
 namespace dorado::basecall::model {
 
 struct CRFModelImpl : torch::nn::Module {
-    explicit CRFModelImpl(const config::BasecallModelConfig &config);
+    explicit CRFModelImpl(const config::BasecallModelConfig &config, at::TensorOptions opts);
     void load_state_dict(const std::vector<at::Tensor> &weights);
 #if DORADO_CUDA_BUILD
     at::Tensor run_koi(const at::Tensor &in, const nn::AuxiliaryData *aux /* = nullptr */);

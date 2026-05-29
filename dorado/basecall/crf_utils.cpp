@@ -166,7 +166,7 @@ namespace {
 
 ModuleHolder<AnyModule> load_lstm_model(const BasecallModelConfig &model_config,
                                         const at::TensorOptions &options) {
-    auto model = model::CRFModel(model_config);
+    auto model = model::CRFModel(model_config, options);
     auto state_dict = load_crf_model_weights(model_config);
     model->load_state_dict(state_dict);
     model->to(options.dtype().toScalarType());

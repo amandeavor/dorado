@@ -10,7 +10,6 @@
 #include <c10/core/TensorOptions.h>
 #include <torch/nn.h>
 
-#include <memory>
 #include <vector>
 
 namespace dorado::config {

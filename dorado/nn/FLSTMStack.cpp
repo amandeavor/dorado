@@ -16,24 +16,26 @@ extern "C" {
 
 namespace dorado::nn {
 
-FLSTMLayerImpl::FLSTMLayerImpl(const int C, const int K) : C_(C) {
-    dn_weight_ih_ = register_parameter("dn_weight_ih", torch::empty({K, C}));
-    dn_weight_hh_ = register_parameter("dn_weight_hh", torch::empty({K, C}));
-    up_weight_ih_ = register_parameter("up_weight_ih", torch::empty({4 * C, K}));
-    up_weight_hh_ = register_parameter("up_weight_hh", torch::empty({4 * C, K}));
-    up_bias_ih_ = register_parameter("up_bias_ih", torch::empty({4 * C}));
-    up_bias_hh_ = register_parameter("up_bias_hh", torch::empty({4 * C}));
+FLSTMLayerImpl::FLSTMLayerImpl(const int C, const int K, at::TensorOptions opts) : C_(C) {
+    dn_weight_ih_ = register_parameter("dn_weight_ih", torch::empty({K, C}, opts));
+    dn_weight_hh_ = register_parameter("dn_weight_hh", torch::empty({K, C}, opts));
+    up_weight_ih_ = register_parameter("up_weight_ih", torch::empty({4 * C, K}, opts));
+    up_weight_hh_ = register_parameter("up_weight_hh", torch::empty({4 * C, K}, opts));
+    up_bias_ih_ = register_parameter("up_bias_ih", torch::empty({4 * C}, opts));
+    up_bias_hh_ = register_parameter("up_bias_hh", torch::empty({4 * C}, opts));
 }
 
 at::Tensor FLSTMLayerImpl::forward(at::Tensor x) {
+    const auto opts = x.options();
+
     x = x.transpose(0, 1).contiguous();  // NTC -> TNC
     const int T = x.size(0);
     const int N = x.size(1);
 
-    at::Tensor hh = torch::empty({T + 1, N, C_});
+    at::Tensor hh = torch::empty({T + 1, N, C_}, opts);
     hh[0] = 0;
 
-    at::Tensor c = torch::zeros({N, C_});
+    at::Tensor c = torch::zeros({N, C_}, opts);
 
     const auto sigmoid_hard = [](const at::Tensor &a) {
         return a.mul_(0.2f).add_(0.5f).clamp_(0.f, 1.f);
@@ -65,7 +67,8 @@ at::Tensor FLSTMLayerImpl::forward(at::Tensor x) {
 FLSTMStackImpl::FLSTMStackImpl(const int num_layers,
                                const int C,
                                const int K,
-                               const bool first_reverse)
+                               const bool first_reverse,
+                               at::TensorOptions opts)
         : C_(C), K_(K), first_reverse_(first_reverse) {
 #if !DORADO_CUDA_BUILD
     // These are only used in the CUDA path.
@@ -73,7 +76,7 @@ FLSTMStackImpl::FLSTMStackImpl(const int num_layers,
 #endif
     for (int i = 0; i < num_layers; ++i) {
         const auto label = std::string{"rnn"} + std::to_string(i + 1);
-        layers_.emplace_back(register_module(label, FLSTMLayer(C, K)));
+        layers_.emplace_back(register_module(label, FLSTMLayer(C, K, opts)));
     }
 }
 
