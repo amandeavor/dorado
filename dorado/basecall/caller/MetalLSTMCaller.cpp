@@ -25,6 +25,9 @@ using torch::indexing::Slice;
 namespace {
 constexpr int MTL_CORE_BATCH_SIZE = 48;
 
+constexpr at::ScalarType scores_dtype = at::kChar;
+constexpr at::ScalarType posts_dtype = at::kShort;
+
 CREATE_POINT_OF_INTEREST_ID(MetalLSTMCaller);
 }  // namespace
 
@@ -184,10 +187,10 @@ void MetalLSTMCaller::set_chunk_batch_size(const BasecallModelConfig &model_conf
     m_posts_NTC.clear();
     m_bwd_NTC.clear();
     for (int i = 0; i < m_out_split; ++i) {
-        m_scores_TNC.push_back(torch::empty({T, m_out_batch_size, C}, m_scores_dtype));
+        m_scores_TNC.push_back(torch::empty({T, m_out_batch_size, C}, scores_dtype));
         // Unfortunately torch doesn't have Uint16, or we would use it.  We could offset,
         // or rely on undefined overflow behaviour, but for now we waste the sign bit.
-        m_posts_NTC.push_back(torch::empty({m_out_batch_size, T + 1, Cs}, m_posts_dtype));
+        m_posts_NTC.push_back(torch::empty({m_out_batch_size, T + 1, Cs}, posts_dtype));
         m_bwd_NTC.push_back(torch::empty({m_out_batch_size, T + 1, Cs}));
     }
 }

@@ -32,8 +32,6 @@ private:
     bool call_task(NNTask &task, std::mutex &inter_caller_mutex, int try_count) override;
 
     std::unique_ptr<model::MetalCRFModelImpl> m_model;
-    at::ScalarType m_scores_dtype = at::kChar;
-    at::ScalarType m_posts_dtype = at::kShort;
 
     // Number of pieces the linear output is split into, for reasons of
     // buffer size constraints.
