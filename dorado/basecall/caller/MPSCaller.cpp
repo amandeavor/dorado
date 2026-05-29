@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <mutex>
+#include <stdexcept>
 
 using namespace dorado::utils;
 using torch::indexing::Slice;
@@ -92,6 +93,7 @@ MPSCaller::MPSCaller(const BasecallModelConfig &model_config) : MetalCaller(mode
                     m_batch_size = 16;
                 }
             } else if (model_config.is_flstm_model()) {
+                // For now pick the largest batch size we can since speed seems to scale with it.
                 // TODO: replace with implementation of autobatchsize calculation
                 m_batch_size = get_max_safe_batch_size(1, model_config);
             }
@@ -126,17 +128,49 @@ at::Tensor MPSCaller::create_input_tensor() const {
     return at::zeros({m_batch_size, m_config.num_features, m_in_chunk_size}, at::kHalf);
 }
 
-int MPSCaller::get_max_safe_batch_size(float, const config::BasecallModelConfig &model_config) {
+int MPSCaller::get_max_safe_batch_size(float memory_limit_fraction,
+                                       const config::BasecallModelConfig &model_config) {
     if (model_config.is_tx_model()) {
         // TODO: better number here
         return 32;
+
+    } else if (model_config.is_flstm_model()) {
+        const int64_t physical_memory = get_apple_physical_memory_bytes();
+        const int64_t granularity = get_batch_size_granularity(model_config);
+
+        // We see performance issues from memory pressure, so only try and use part of what's avaiable.
+        const int64_t usable_memory = physical_memory * memory_limit_fraction / 2;
+
+        // Memory usage is roughly given by the following:
+        //   |memory_MB = 42 * batch_size + 1000|
+        // Found empirically by running the following on an M3:
+        //   |for bs in {64..512..32} ; do \time -l dorado basecaller -b ${bs} hac@v6 ... 2>&1 | grep "peak memory" ; done|
+        int64_t batch_size = (usable_memory / 1024 / 1024 - 1000) / 42;
+
+        // Round down to a multiple of the granularity.
+        batch_size = batch_size / granularity * granularity;
+
+        if (batch_size <= 0) {
+            spdlog::warn("Failed to estimate max batch size: {}GB -> bs={}. Using {}",
+                         usable_memory / BYTES_PER_GB, batch_size, granularity);
+            batch_size = granularity;
+        }
+        return batch_size;
+
     } else {
-        // TODO: arbitrarily chosen
-        return 128;
+        throw std::runtime_error("Unknown model config");
     }
 }
 
-int MPSCaller::get_batch_size_granularity() { return 8; }
+int MPSCaller::get_batch_size_granularity(const config::BasecallModelConfig &model_config) {
+    if (model_config.is_tx_model()) {
+        return 8;
+    } else if (model_config.is_flstm_model()) {
+        return 32;
+    } else {
+        throw std::runtime_error("Unknown model config");
+    }
+}
 
 bool MPSCaller::run_scan_kernels(MTL::CommandBuffer *const cb, int try_count) {
     POINT_OF_INTEREST_SCOPE(MPSCaller, run_scan_kernels, "try_count=%i", try_count);

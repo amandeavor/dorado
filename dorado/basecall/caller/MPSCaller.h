@@ -16,7 +16,7 @@ public:
 
     static int get_max_safe_batch_size(float memory_limit_fraction,
                                        const config::BasecallModelConfig &model_config);
-    static int get_batch_size_granularity();
+    static int get_batch_size_granularity(const config::BasecallModelConfig &model_config);
 
 private:
     bool run_scan_kernels(MTL::CommandBuffer *const cb, int try_count);

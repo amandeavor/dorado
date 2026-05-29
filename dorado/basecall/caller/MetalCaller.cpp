@@ -49,7 +49,7 @@ int MetalCaller::get_max_safe_batch_size(float memory_limit_fraction,
 
 int MetalCaller::get_batch_size_granularity(const config::BasecallModelConfig &model_config) {
     if (model_config.is_tx_model() || model_config.is_flstm_model()) {
-        return basecall::MPSCaller::get_batch_size_granularity();
+        return basecall::MPSCaller::get_batch_size_granularity(model_config);
     } else if (model_config.is_lstm_model()) {
         return basecall::MetalLSTMCaller::get_batch_size_granularity();
     } else {
