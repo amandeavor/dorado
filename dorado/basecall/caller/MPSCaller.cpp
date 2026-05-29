@@ -37,10 +37,6 @@ using namespace config;
 MPSCaller::MPSCaller(const BasecallModelConfig &model_config) : MetalCaller(model_config) {
     ScopedAutoReleasePool autorelease_pool;
 
-    if (!model_config.is_tx_model()) {
-        throw std::logic_error("MPSCaller got invalid model config");
-    }
-
     // Our metal builds assume shared memory, so it's safe to check host.
     if (auto total_mem = utils::total_host_memory_GB(); total_mem < 16) {
         spdlog::warn(
@@ -62,13 +58,16 @@ MPSCaller::MPSCaller(const BasecallModelConfig &model_config) : MetalCaller(mode
 
     // Cache common options.
     {
-        m_states = std::pow(m_config.tx->crf.n_base, model_config.state_len);
+        // TODO: non-Tx doesn't honour the config's n_base
+        const int n_base = model_config.is_tx_model() ? m_config.tx->crf.n_base : 4;
+        m_states = std::pow(n_base, model_config.state_len);
 
         m_decoder_options = decode::DecoderOptions();
         m_decoder_options.q_shift = model_config.qbias;
         m_decoder_options.q_scale = model_config.qscale;
 
-        if (m_decoder_options.blank_score != m_config.tx->crf.blank_score) {
+        if (model_config.is_tx_model() &&
+            m_decoder_options.blank_score != m_config.tx->crf.blank_score) {
             spdlog::warn("Transformer model config does not have the expected blank score");
         }
     }
@@ -83,13 +82,18 @@ MPSCaller::MPSCaller(const BasecallModelConfig &model_config) : MetalCaller(mode
         m_batch_size = model_config.basecaller.batch_size();
 
         if (m_batch_size == 0) {
-            // Testing shows that a batch size of 16 is optimal in most cases, except
-            // on low memory machines where 16 can perform a lot worse than 8.
-            // TODO: replace with implementation of autobatch size calculation
-            if (utils::total_host_memory_GB() < 16) {
-                m_batch_size = 8;
-            } else {
-                m_batch_size = 16;
+            if (model_config.is_tx_model()) {
+                // Testing shows that a batch size of 16 is optimal in most cases, except
+                // on low memory machines where 16 can perform a lot worse than 8.
+                // TODO: replace with implementation of autobatchsize calculation
+                if (utils::total_host_memory_GB() < 16) {
+                    m_batch_size = 8;
+                } else {
+                    m_batch_size = 16;
+                }
+            } else if (model_config.is_flstm_model()) {
+                // TODO: replace with implementation of autobatchsize calculation
+                m_batch_size = get_max_safe_batch_size(1, model_config);
             }
         }
     }
@@ -122,9 +126,14 @@ at::Tensor MPSCaller::create_input_tensor() const {
     return at::zeros({m_batch_size, m_config.num_features, m_in_chunk_size}, at::kHalf);
 }
 
-int MPSCaller::get_max_safe_batch_size(float, const config::BasecallModelConfig &) {
-    // TODO: better number here
-    return 32;
+int MPSCaller::get_max_safe_batch_size(float, const config::BasecallModelConfig &model_config) {
+    if (model_config.is_tx_model()) {
+        // TODO: better number here
+        return 32;
+    } else {
+        // TODO: arbitrarily chosen
+        return 128;
+    }
 }
 
 int MPSCaller::get_batch_size_granularity() { return 8; }
