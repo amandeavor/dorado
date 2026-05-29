@@ -228,7 +228,7 @@ dorado_emit_cram_iupac_reference
 title dorado basecaller mixed model complex and --modified-bases
 $dorado_bin basecaller $model_complex $pod5_data/ ${models_directory_arg} -b ${batch} --modified-bases 5mCG_5hmCG -vv > $output_dir/calls.bam
 if [[ -z "$SAMTOOLS_UNAVAILABLE" ]]; then
-    samtools view -h $output_dir/calls.bam | grep "ML:B:C,"
+    samtools view -h $output_dir/calls.bam | grep "ML:B:C"
     samtools view -h $output_dir/calls.bam | grep "MM:Z:C+h"
     samtools view -h $output_dir/calls.bam | grep "MN:i:"
 fi
