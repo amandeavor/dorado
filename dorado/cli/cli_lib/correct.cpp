@@ -244,7 +244,7 @@ std::filesystem::path download_model(const std::string& model_name) {
         spdlog::error("Could not download model: {}", model_name);
         std::exit(EXIT_FAILURE);
     }
-    return (tmp_dir / "herro-v1");
+    return (tmp_dir / "herro-v1.1");
 }
 
 struct HtsFileDeleter {
@@ -435,7 +435,7 @@ int correct(int argc, char* argv[]) {
         std::filesystem::path ret_model_dir = opt.model_path;
         bool ret_remove_tmp_dir = false;
         if (!opt.to_paf && std::empty(ret_model_dir)) {
-            ret_model_dir = download_model("herro-v1");
+            ret_model_dir = download_model("herro-v1.1");
             ret_remove_tmp_dir = true;
         }
         return std::tuple(ret_model_dir, ret_remove_tmp_dir);

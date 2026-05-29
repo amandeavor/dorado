@@ -40,22 +40,23 @@ fi
 CRAM=$(pwd)/cram-0.6/cram.py
 popd
 
-# Set the model directory for the tests.
-MODEL_DIR=${output_dir}/herro-v1
+MODEL_ROOT_DIR=${output_dir}
 
 # Download the model once.
+MODEL_NAME="herro-v1.1"
+MODEL_DIR=${MODEL_ROOT_DIR}/${MODEL_NAME}
 if [[ ! -d "${MODEL_DIR}" ]]; then
-    ${DORADO_BIN} download --model "herro-v1" --models-directory ${output_dir}
+    ${DORADO_BIN} download --model "${MODEL_NAME}" --models-directory ${MODEL_ROOT_DIR}
 fi
 
 export DORADO_BIN
 export TEST_DATA_DIR
 export MODEL_DIR
+export MODEL_NAME
+export MODEL_ROOT_DIR
 export OUTPUT_DIR=${output_dir}
 python3 \
     ${CRAM} \
     --verbose \
     --shell=${TEST_DIR}/cram/cram_shell_wrapper.sh \
-    ${TEST_DIR}/cram/correct/*.t
-
-rm -rf ${output_dir}
+   ${TEST_DIR}/cram/correct/*.t
