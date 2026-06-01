@@ -270,13 +270,14 @@ struct MTLAllocator : at::Allocator {
         if (n == 0) {
             return at::DataPtr(nullptr, at::DeviceType::CPU);
         } else if (n >= (size_t(1) << 32)) {
-            return at::DataPtr(new char[n], at::DeviceType::CPU);
+            void *data = new char[n];
+            return at::DataPtr(data, data, delete_allocation, at::DeviceType::CPU);
         }
         auto buffer = mtl_device->newBuffer(n, MTL::ResourceStorageModeShared);
-        return at::DataPtr(buffer->contents(), buffer, &deleter, at::DeviceType::CPU);
+        return at::DataPtr(buffer->contents(), buffer, delete_buffer, at::DeviceType::CPU);
     }
-
-    static void deleter(void *ptr) { ((MTL::Buffer *)ptr)->release(); }
+    static void delete_allocation(void *ptr) { delete[] (char *)ptr; }
+    static void delete_buffer(void *ptr) { ((MTL::Buffer *)ptr)->release(); }
 
     void copy_data(void *dest, const void *src, std::size_t count) const override {
         default_copy_data(dest, src, count);
