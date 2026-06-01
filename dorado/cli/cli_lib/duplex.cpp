@@ -660,8 +660,7 @@ int duplex(int argc, char* argv[]) {
             const auto& hts_writer_ref = pipeline->get_node_ref<WriterNode>(hts_writer);
             hts_writer_ref.set_shared_header(std::move(hdr));
 
-            data_loader::DataLoader loader(*pipeline, "cpu", num_devices, 0, std::move(read_list),
-                                           {});
+            data_loader::DataLoader loader(*pipeline, num_devices, 0, std::move(read_list), {});
             loader.add_read_initialiser(client_info_init_func);
 
             stats_sampler = std::make_unique<dorado::stats::StatsSampler>(

@@ -36,7 +36,6 @@ public:
 class DataLoader {
 public:
     DataLoader(Pipeline& pipeline,
-               const std::string& device,
                size_t num_worker_threads,
                size_t max_reads,
                std::optional<std::unordered_set<std::string>> read_list,
@@ -74,7 +73,6 @@ private:
 
     Pipeline& m_pipeline;  // Where should the loaded reads go?
     size_t m_loaded_read_count{0};
-    std::string m_device;
     cxxpool::thread_pool m_thread_pool;
     size_t m_max_reads{0};
     std::optional<std::unordered_set<std::string>> m_allowed_read_ids;

@@ -107,8 +107,8 @@ SpeedEntry calculate_one(const std::string &device,
     // We need to feed in the data on a separate thread since it'll block.
     std::atomic<bool> finished_data{false};
     auto source = utils::jthread([&] {
-        data_loader::DataLoader loader(*pipeline, device, thread_allocs.loader_threads, 0,
-                                       std::nullopt, {});
+        data_loader::DataLoader loader(*pipeline, thread_allocs.loader_threads, 0, std::nullopt,
+                                       {});
         loader.load_reads(input_files, ReadOrder::UNRESTRICTED);
         finished_data.store(true, std::memory_order_relaxed);
     });

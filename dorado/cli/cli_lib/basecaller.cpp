@@ -1029,7 +1029,7 @@ void run(const BasecallerOptions& options,
 
     // Start feeding data into the pipeline.
     {
-        data_loader::DataLoader loader(*pipeline, "cpu", thread_allocations.loader_threads,
+        data_loader::DataLoader loader(*pipeline, thread_allocations.loader_threads,
                                        options.max_reads, std::move(read_list),
                                        std::move(reads_already_processed));
         loader.add_read_initialiser(
