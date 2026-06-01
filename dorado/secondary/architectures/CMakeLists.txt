@@ -7,6 +7,7 @@ target_sources(dorado_secondary
         ${PUBLIC_BASE}/model_config.h
         ${PUBLIC_BASE}/model_config_validation.h
         ${PUBLIC_BASE}/model_herro.h
+        ${PUBLIC_BASE}/model_weights.h
     PRIVATE
         flash_attention_module.cpp
         flash_attention_module.h
@@ -27,6 +28,7 @@ target_sources(dorado_secondary
         model_torch_script.h
         model_variant_perceiver.cpp
         model_variant_perceiver.h
+        model_weights.cpp
 )
 
 target_include_directories(dorado_secondary

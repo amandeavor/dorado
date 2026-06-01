@@ -1,15 +1,10 @@
 #include "secondary/architectures/model_herro.h"
 
-#include "utils/container_utils.h"
+#include "secondary/architectures/model_weights.h"
 
 #include <ATen/TensorIndexing.h>
-#include <spdlog/spdlog.h>
-#include <torch/script.h>
 
 #include <algorithm>
-#include <stdexcept>
-#include <string>
-#include <unordered_set>
 
 namespace dorado::secondary {
 namespace {
@@ -31,65 +26,6 @@ at::Tensor create_padding_mask(const at::Tensor& lengths, const int64_t max_leng
     const at::Tensor positions =
             at::arange(max_length, lengths.options()).expand({lengths.size(0), max_length});
     return positions.ge(lengths.unsqueeze(-1));
-}
-
-void copy_tensor(const std::string& name,
-                 const at::Tensor& src,
-                 torch::OrderedDict<std::string, at::Tensor>& params,
-                 torch::OrderedDict<std::string, at::Tensor>& buffers) {
-    if (params.contains(name)) {
-        params[name].copy_(src);
-    } else if (buffers.contains(name)) {
-        buffers[name].copy_(src);
-    } else {
-        throw std::runtime_error("Unexpected tensor in Herro weights: " + name);
-    }
-}
-
-void load_torchscript_weights(ModelHerro& model, const std::filesystem::path& model_path) {
-    spdlog::debug("Loading Herro model weights from file: {}", model_path.string());
-
-    at::InferenceMode infer_guard;
-
-    torch::jit::script::Module module;
-    try {
-        module = torch::jit::load(model_path.string(), torch::kCPU);
-    } catch (const c10::Error& e) {
-        throw std::runtime_error("Error loading model weights from " + model_path.string() +
-                                 " with error: " + e.what());
-    }
-
-    torch::OrderedDict<std::string, at::Tensor> params = model.named_parameters(true);
-    torch::OrderedDict<std::string, at::Tensor> buffers = model.named_buffers(true);
-
-    std::unordered_set<std::string> expected;
-    for (const auto& param : params) {
-        expected.emplace(param.key());
-    }
-    for (const auto& buffer : buffers) {
-        expected.emplace(buffer.key());
-    }
-
-    std::unordered_set<std::string> loaded;
-    for (const auto& param : module.named_parameters(true)) {
-        copy_tensor(param.name, param.value, params, buffers);
-        loaded.emplace(param.name);
-    }
-    for (const auto& buffer : module.named_buffers(true)) {
-        copy_tensor(buffer.name, buffer.value, params, buffers);
-        loaded.emplace(buffer.name);
-    }
-
-    std::vector<std::string> missing;
-    for (const std::string& name : expected) {
-        if (loaded.count(name) == 0) {
-            missing.push_back(name);
-        }
-    }
-    if (!missing.empty()) {
-        throw std::runtime_error("Cannot load Herro weights: missing tensors in weights file: " +
-                                 utils::print_container_as_string(missing, ", ", true));
-    }
 }
 
 }  // namespace
@@ -237,7 +173,7 @@ std::tuple<at::Tensor, at::Tensor> ModelHerro::forward(
 
 std::shared_ptr<ModelHerro> load_model_herro(const std::filesystem::path& model_path) {
     std::shared_ptr<ModelHerro> model(new ModelHerro());
-    load_torchscript_weights(*model, model_path);
+    load_state_dict(*model, model_path, {});
     return model;
 }
 

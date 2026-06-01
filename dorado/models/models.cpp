@@ -1727,8 +1727,8 @@ namespace correction {
 
 const std::vector<ModelInfo> models = {
         ModelInfo{
-                "herro-v1",
-                "c7077840f84b469f2c0fd2ae44649fa5f7fa45132540fb54536792c8e22dab9a",
+                "herro-v1.1",
+                "f9673c7c71e22ee966a207ee1ec8364f99a148427472922451e17b04cf209328",
                 CC::UNKNOWN,
                 ModelType::CORRECT,
                 ModelVariantPair{},
