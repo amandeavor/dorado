@@ -18,6 +18,8 @@
 using namespace dorado::utils;
 using torch::indexing::Slice;
 
+namespace dorado::basecall {
+
 namespace {
 
 // Types to use for different parts of the pipeline.
@@ -31,11 +33,7 @@ CREATE_POINT_OF_INTEREST_ID(MPSCaller);
 
 }  // namespace
 
-namespace dorado::basecall {
-
-using namespace config;
-
-MPSCaller::MPSCaller(const BasecallModelConfig &model_config) : MetalCaller(model_config) {
+MPSCaller::MPSCaller(const config::BasecallModelConfig &model_config) : MetalCaller(model_config) {
     ScopedAutoReleasePool autorelease_pool;
 
     // Our metal builds assume shared memory, so it's safe to check host.
