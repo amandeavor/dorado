@@ -32,22 +32,18 @@
 .macos_arm_regression_runner:
   tags:
     - osx_arm64
-    - xcode-15.3
     - on-prem
     # Modbase regression results depend on the MPS version which depends on the OS version,
     # so pin the OS to the one that we have the most runners of.
-    - osx-14.4
+    - osx-15.5
 
 .macos_arm_regression_speed_runner:
   tags:
     - osx_arm64
     - on-prem
     # We need to pin to an OS and GPU for consistent speeds.
-    # TODO: M4 CI runners currently have issues connecting to artifactory.
-    #- osx-15.1
-    #- m4
-    - osx-14.7
-    - m2-32gb
+    - osx-15.5
+    - m4
 
 .linux_regression_runner_v100:
   tags:
