@@ -4,7 +4,6 @@
 #include "model_gru.h"
 #include "model_latent_space_lstm.h"
 #include "model_slot_attention_consensus.h"
-#include "model_torch_script.h"
 #include "model_variant_perceiver.h"
 #include "secondary/architectures/model_config_validation.h"
 #include "secondary/architectures/model_weights.h"
@@ -14,7 +13,7 @@
 
 #include <spdlog/spdlog.h>
 #include <torch/autograd.h>
-#include <torch/script.h>
+#include <torch/csrc/jit/serialization/pickle.h>
 
 #include <filesystem>
 #include <unordered_map>
@@ -55,21 +54,6 @@ std::shared_ptr<ModelTorchBase> model_factory(const ModelConfig& config,
         throw std::runtime_error{"Unexpected weights/model file name! model_file = '" +
                                  config.model_file.string() +
                                  "', expected either 'model.pt' or 'weights.pt'."};
-    }
-
-    if (config.model_file == "model.pt") {
-        // Load a TorchScript model. Parameters are not important here.
-        spdlog::debug("Loading a TorchScript model.");
-
-        if (param_strategy != ParameterLoadingStrategy::LOAD_WEIGHTS) {
-            throw std::runtime_error(
-                    "TorchScript model cannot be loaded without loading the model.pt file.");
-        }
-
-        model = ModelTorchScript::make<ModelTorchScript>(config.model_dir / config.model_file);
-        model->set_normalise(false);
-
-        return model;
     }
 
     if (model_type == ModelType::GRU) {

@@ -60,30 +60,6 @@ CATCH_TEST_CASE("Instantiate models", TEST_GROUP) {
         CATCH_CHECK_THROWS(model_factory(config, PARAM_STRATEGY));
     }
 
-    CATCH_SECTION("TorchScript model cannot be loaded without loading the weights") {
-        const ModelConfig config{
-                .version = 1,
-                .supported_basecallers = {"dna_r10.4.1_e8.2_400bps_hac@v5.0.0"},
-                .model_type = "GRUModel",
-                .model_file = "model.pt",
-                .model_dir = "",
-                .model_kwargs =
-                        {
-                                {"num_features", "10"},
-                                {"num_classes", "5"},
-                                {"gru_size", "128"},
-                                {"n_layers", "2"},
-                                {"bidirectional", "true"},
-                        },
-                .feature_encoder_type = "CountsFeatureEncoder",
-                .feature_encoder_kwargs = {},
-                .feature_encoder_dtypes = {},
-                .label_scheme_type = "DiploidLabelScheme",
-        };
-
-        CATCH_CHECK_THROWS(model_factory(config, PARAM_STRATEGY));
-    }
-
     CATCH_SECTION("GRU model") {
         const ModelConfig config{
                 .version = 1,
