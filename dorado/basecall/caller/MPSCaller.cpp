@@ -22,11 +22,39 @@ namespace dorado::basecall {
 
 namespace {
 
+bool is_mps_flstm_broken() {
+    static bool is_working = [] {
+        // I don't know exactly when it was fixed, but it's broken in 14.7 and works in 15.5.
+        // Note: I'm assuming that this is an OS issue and not a hardware one (ie it's not M2 vs M4)
+        const NS::OperatingSystemVersion min_version{
+                .majorVersion = 15,
+                .minorVersion = 5,
+                .patchVersion = 0,
+        };
+        const auto info = NS::ProcessInfo::processInfo();
+        if (info->isOperatingSystemAtLeastVersion(min_version)) {
+            return true;
+        }
+
+        spdlog::warn(
+                "Torch's MPS backend is buggy for fLSTM before macOS {}.{}.{}. Falling back to CPU "
+                "instead. This will be slower than running with `--device cpu`!",
+                min_version.majorVersion, min_version.minorVersion, min_version.patchVersion);
+        return false;
+    }();
+    return !is_working;
+}
+
 // Types to use for different parts of the pipeline.
 constexpr at::ScalarType scores_dtype = at::kHalf;
 constexpr at::ScalarType posts_dtype = at::kFloat;
-at::TensorOptions get_crf_options() {
-    return at::TensorOptions().device(at::kMPS).dtype(at::kHalf);
+at::TensorOptions get_crf_options(const config::BasecallModelConfig &config) {
+    if (config.is_flstm_model() && is_mps_flstm_broken()) {
+        // MPS:Half and MPS:Float are broken, and CPU:Half is slower than CPU:Float.
+        return at::TensorOptions().device(at::kCPU).dtype(at::kFloat);
+    } else {
+        return at::TensorOptions().device(at::kMPS).dtype(at::kHalf);
+    }
 }
 
 CREATE_POINT_OF_INTEREST_ID(MPSCaller);
@@ -115,7 +143,7 @@ MPSCaller::MPSCaller(const config::BasecallModelConfig &model_config) : MetalCal
     }
 
     // Load the model and get ready for calling.
-    m_model = load_crf_model(model_config, get_crf_options());
+    m_model = load_crf_model(model_config, get_crf_options(model_config));
     start_threads();
 }
 
@@ -133,6 +161,12 @@ int MPSCaller::get_max_safe_batch_size(float memory_limit_fraction,
         return 32;
 
     } else if (model_config.is_flstm_model()) {
+        if (is_mps_flstm_broken()) {
+            // We're falling back on CPU, so limit it.
+            // Note: this matches the value in Models::set_basecaller_batch_params().
+            return 128;
+        }
+
         const int64_t physical_memory = get_apple_physical_memory_bytes();
         const int64_t granularity = get_batch_size_granularity(model_config);
 
@@ -193,7 +227,7 @@ bool MPSCaller::run_scan_kernels(MTL::CommandBuffer *const cb, int try_count) {
 }
 
 bool MPSCaller::call_task(NNTask &task, std::mutex &inter_caller_mutex, int try_count) {
-    auto scores_TNC = m_model->forward(task.input->to(get_crf_options()))
+    auto scores_TNC = m_model->forward(task.input->to(get_crf_options(m_config)))
                               .transpose(0, 1)
                               .contiguous()
                               .to(scores_dtype);
