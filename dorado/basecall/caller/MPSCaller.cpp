@@ -201,11 +201,9 @@ bool MPSCaller::call_task(NNTask &task, std::mutex &inter_caller_mutex, int try_
                               .to(scores_dtype);
 
     MTL::CommandBuffer *const cb = next_command_buffer(m_command_queue.get(), try_count);
-    if (m_decode_complete_event) {
-        // wait for the previous decode task to complete - this acts as a mutex
-        // previous scores are processed in the decode threads
-        cb->encodeWait(m_decode_complete_event.get(), task.decode_complete_event_id - 1);
-    }
+    // wait for the previous decode task to complete - this acts as a mutex
+    // previous scores are processed in the decode threads
+    cb->encodeWait(m_decode_complete_event.get(), task.decode_complete_event_id - 1);
 
     m_scores_TNC.index_put_({at::indexing::Ellipsis}, scores_TNC);
 
