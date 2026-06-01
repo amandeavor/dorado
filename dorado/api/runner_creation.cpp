@@ -4,6 +4,7 @@
 #include "basecall/crf_utils.h"
 #include "config/ModBaseModelConfig.h"
 #include "nn/KoiUtils.h"
+#include "utils/dev_utils.h"
 
 #if DORADO_METAL_BUILD
 #include "basecall/MetalModelRunner.h"
@@ -63,11 +64,11 @@ bool check_variable_chunk_sizes_supported(
         }
         return (model_config.lstm_size == 1024) && (model_config.lstm_inner_dim.value() == 128);
     }
-    if (model_config.is_tx_model()) {
-        return false;
-    }
-#endif
+    spdlog::debug("VCS = {}", true);
+    return true;
+#else
     return false;
+#endif
 }
 
 std::pair<std::vector<basecall::RunnerPtr>, size_t> create_basecall_runners(

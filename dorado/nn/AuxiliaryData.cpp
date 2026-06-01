@@ -35,19 +35,20 @@ AuxiliaryData::AuxiliaryData(at::Tensor workspace,
           chunk_sizes_(std::cbegin(chunk_sizes), std::cend(chunk_sizes)) {
     T_lstm_ += T_lstm_ & 1;  // needs to be even for easier LUT creation
 
-    total_num_varlen_chunks = std::ssize(chunk_sizes);
+    total_num_varlen_chunks = std::ssize(chunk_sizes_);
     chunk_table_.resize(2 * total_num_varlen_chunks);
     chunk_intervals_.resize(2 * total_num_varlen_chunks);
     int i = 0;
     total_num_granularity = 0;
-    for (const std::int32_t& cs : chunk_sizes) {
+    for (std::int32_t& cs : chunk_sizes_) {
         int cs_blocks = cs / chunk_size_granularity;
         chunk_table_[(2 * i) + 0] = total_num_granularity;
         chunk_table_[(2 * i) + 1] = cs_blocks;
-        chunk_intervals_[(2 * i) + 0] = total_num_granularity;
-        chunk_intervals_[(2 * i) + 1] = total_num_granularity + cs_blocks;
+        chunk_intervals_[(2 * i) + 0] = total_num_granularity * chunk_size_granularity;
+        chunk_intervals_[(2 * i) + 1] = (total_num_granularity + cs_blocks) * chunk_size_granularity;
         total_num_granularity += cs_blocks;
         ++i;
+        cs /= stride;
     }
 }
 
@@ -66,14 +67,13 @@ void AuxiliaryData::create_auxiliary_data([[maybe_unused]] const c10::Device& de
                                           [[maybe_unused]] KoiThreads& thread_pool,
                                           bool is_lstm_model) {
 #if DORADO_CUDA_BUILD
-    if (device_chunk_table.defined()) {
-        return;
-    }
 
-    auto options = at::TensorOptions().device(device).dtype(at::kInt);
+    auto cpu_options = at::TensorOptions().dtype(at::kInt);
+    auto gpu_options = cpu_options.device(device);
+
     device_chunk_table = at::from_blob(std::data(chunk_table_),
-                                       {static_cast<std::int32_t>(std::size(chunk_table_))},
-                                       options);
+                                    {static_cast<std::int32_t>(std::size(chunk_table_))},
+                                    cpu_options).view({total_num_varlen_chunks, 2}).to(gpu_options);
 
     if (is_lstm_model) {
         if (device_in_layout.defined()) {
@@ -87,12 +87,12 @@ void AuxiliaryData::create_auxiliary_data([[maybe_unused]] const c10::Device& de
 
         device_chunk_intervals =
                 at::from_blob(std::data(chunk_intervals_),
-                            {static_cast<std::int32_t>(std::size(chunk_intervals_))}, options);
+                            {static_cast<std::int32_t>(std::size(chunk_intervals_))}, cpu_options).to(gpu_options);
 
-        device_in_layout = at::empty({chunk_sum}, options);
-        device_out_layout = at::empty({N_ * (T_lstm_ + 1)}, options);
-        device_fwd_encoding = at::empty({N_ * T_lstm_}, options);
-        device_bwd_encoding = at::empty({N_ * (T_lstm_ + 1)}, options);
+        device_in_layout = at::empty({chunk_sum}, gpu_options);
+        device_out_layout = at::empty({N_ * (T_lstm_ + 1)}, gpu_options);
+        device_fwd_encoding = at::empty({N_ * T_lstm_}, gpu_options);
+        device_bwd_encoding = at::empty({N_ * (T_lstm_ + 1)}, gpu_options);
 
         constexpr std::int32_t SUBBATCH_SIZE{32};
 
@@ -113,10 +113,20 @@ void AuxiliaryData::create_auxiliary_data([[maybe_unused]] const c10::Device& de
             return;
         }
 
-        auto i32_opts = at::TensorOptions().device(device).dtype(at::kInt);
-        conv_load_lut = at::empty({total_num_granularity}, i32_opts);
-        conv_store_lut = at::empty({total_num_granularity}, i32_opts);
-        qkv_rope_lut = at::empty({total_num_granularity}, i32_opts);
+        device_chunk_table = device_chunk_table * chunk_size_granularity;
+
+        conv_load_lut = at::empty({total_num_granularity}, gpu_options);
+        conv_store_lut = at::empty({total_num_granularity}, gpu_options);
+        // Why is qkv_rope_lut intialised with zeros?
+        // qkv_rope gets sincos values according to T value within lut
+        // Input to tx encoder is "padded" to be multiple of 256 to accommodate Koi's MatMulOp
+        // So blocks that are outside of total_num_granularity will access lut
+        // Those blocks are irrelevant for basecalling, just don't make basecalling crash
+        // So with lut being zeros, these padded blocks will calculate sincos as if they were T = 0
+
+        // pad to be a multiple of 4, so as if input was multiple of 256
+        int qkv_rope_lut_size = ((total_num_granularity + 3) / 4) * 4;
+        qkv_rope_lut = at::zeros({qkv_rope_lut_size}, gpu_options);
 
         max_num_granularity = NT_in_max() / chunk_size_granularity;
 

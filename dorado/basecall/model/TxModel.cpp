@@ -28,7 +28,6 @@ at::Tensor TxModelImpl::forward(const at::Tensor &input, nn::AuxiliaryData *aux)
         else
 #endif
         {
-            // If non-VCS, input is NCT layout
             // Returns: NTC layout
             h = convs->forward(input);
         }

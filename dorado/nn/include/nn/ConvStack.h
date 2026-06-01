@@ -40,6 +40,7 @@ struct ConvStackImpl : torch::nn::Module {
         at::Tensor conv_output;     // Gets intialised if (aux && aux->chunk_table.defined()), and is of shape (batch_size * chunk_size, params->size)
         int conv_layer_num;
         int next_layer_padding{0};  // Initialised to 0 for last vcs sup convolution that does not get filled AND outputs without padding
+        int M_out;
 
         void reserve_working_memory(WorkingMemory &wm, const AuxiliaryData *aux /* = nullptr */);
         void run_koi(WorkingMemory &wm, const AuxiliaryData *aux /* = nullptr */);

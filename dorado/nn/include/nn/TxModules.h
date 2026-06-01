@@ -98,7 +98,7 @@ struct TxEncoderImpl : torch::nn::Module {
 
     at::Tensor forward(at::Tensor x);
 
-    void koi_forward(utils::ScaledTensor &scaled_tensor, at::Tensor &x_f16, [[maybe_unused]] AuxiliaryData *aux);
+    void koi_forward(utils::ScaledTensor &scaled_tensor, at::Tensor &x_f16, AuxiliaryData *aux);
     void koi_volta_forward(at::Tensor &x_f16);
 
     config::TxEncoderParams params;

@@ -71,7 +71,9 @@ std::unique_ptr<nn::AuxiliaryData> create_empty_input(at::Tensor &in,
         workspace = torch::empty({6 * ((T / stride) + 3) * N}, workspace_options);
     }
     else {
-        in = torch::empty({N * T, C}, in_options);
+        // This is absolute worse-case scenario, where all reads are less than chunk_size_granularity
+        assert((T % chunk_size_granularity) == 0);
+        in = torch::empty({C, (N * T) + (N * (T / chunk_size_granularity) * 4)}, in_options);
     }
 
     auto aux = std::make_unique<nn::AuxiliaryData>(workspace, N, T, stride, chunk_size_granularity,
@@ -272,7 +274,6 @@ std::vector<decode::DecodedChunk> CudaCaller::call_chunks(at::Tensor &input,
         task->cv.wait(lock);
     }
 
-    // TODO: Does this need to be changed for Tx VCS?
     if (aux && m_variable_chunk_sizes) {
         at::Tensor out = output.narrow(0, 0, c10::multiply_integers(task->out.data.sizes()))
                                  .view(task->out.data.sizes());
@@ -317,7 +318,7 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> CudaCaller::create_input_output_t
         at::Tensor input;
         std::int64_t aux_size;
         if (m_config.is_tx_model()) {
-            input = storage.slice(0, 0, input_bytes).view(scalar_type).view({N * T_in, C_in});
+            input = storage.slice(0, 0, input_bytes).view(scalar_type).view({C_in, N * T_in});
             // Tx AuxiliaryData worse-case scenario is if all chunks are of chunk_size_granularity
             // 2 for chunk_table, 3 for luts, all being int32
             aux_size = 5 * (N * (T_in / m_config.chunk_size_granularity()));

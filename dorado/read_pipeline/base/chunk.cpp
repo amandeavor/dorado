@@ -140,7 +140,9 @@ std::vector<std::pair<std::size_t, std::size_t>> generate_variable_chunks_tx(con
     }
 
     // This will get padded to batch_size_granularity in BasecallerNode::basecall_worker_thread
-    intervals.emplace_back(offset, num_samples);
+    if (offset != num_samples) {
+        intervals.emplace_back(offset, num_samples);
+    }
 
     return intervals;
 }

@@ -19,8 +19,8 @@ CudaModelRunner::CudaModelRunner(std::shared_ptr<CudaCaller> caller, size_t batc
     std::tie(m_input, m_output, m_aux) = m_caller->create_input_output_tensor(batch_dims_idx);
     if (config().is_tx_model()) {
         m_first_conv_padding_tensor = torch::zeros({
-            m_first_conv_padding_int,
-            config().num_features                       // m_config.convs.front().insize as per BasecallModelConfig.cpp
+            config().num_features,                      // m_config.convs.front().insize as per BasecallModelConfig.cpp
+            m_first_conv_padding_int            
         }, at::TensorOptions().device(torch::kCPU));    // Batch is "constructed" on CPU
     }
 }
@@ -31,25 +31,25 @@ void CudaModelRunner::accept_chunk(int chunk_idx, const at::Tensor &chunk) {
             // Add initial padding if current_batch is empty
             if (chunk_idx == 0) {
                 m_input.index_put_({
-                    torch::indexing::Slice(0, m_first_conv_padding_int),
-                    torch::indexing::Ellipsis
+                    torch::indexing::Ellipsis,
+                    torch::indexing::Slice(0, m_first_conv_padding_int)
                 }, m_first_conv_padding_tensor);
 
                 m_chunk_offset += m_first_conv_padding_int;
             }
-            // Tx VCS Input is of shape (N * T, C_in)
+            // Tx VCS Input is of shape (C_in, N * T + max_possible padding)
             int chunk_offset_end = m_chunk_offset + chunk.size(1);
             m_input.index_put_({
-                torch::indexing::Slice(m_chunk_offset, chunk_offset_end),
-                torch::indexing::Ellipsis
+                torch::indexing::Ellipsis,
+                torch::indexing::Slice(m_chunk_offset, chunk_offset_end)
             }, chunk);
 
             // Only care about size of raw_data, not added padding
             m_chunk_sizes.emplace_back(chunk.size(1));
 
             m_input.index_put_({
-                torch::indexing::Slice(chunk_offset_end, chunk_offset_end + m_first_conv_padding_int),
-                torch::indexing::Ellipsis
+                torch::indexing::Ellipsis,
+                torch::indexing::Slice(chunk_offset_end, chunk_offset_end + m_first_conv_padding_int)
             }, m_first_conv_padding_tensor);
 
             m_chunk_offset += chunk.size(1) + m_first_conv_padding_int;
