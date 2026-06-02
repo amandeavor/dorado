@@ -63,3 +63,5 @@ def reformat_files(output_folder: pathlib.Path) -> None:
         reformat_fastq(file)
     for file in output_folder.glob("**/*.sam"):
         reformat_sam(file)
+    for file in output_folder.glob("**/*.tsv"):
+        reformat_txt(file)
