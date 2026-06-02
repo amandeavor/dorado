@@ -1149,18 +1149,7 @@ int basecaller(int argc, char* argv[]) {
     }
 
     Models models = load_basecaller_models(parser, pod5_folder_info, "basecaller");
-    const std::string device = [&] {
-        auto dev = cli::parse_device(parser);
-#if DORADO_METAL_BUILD
-        // Always use the CPU for FLSTM models in metal builds until we have a caller to support them.
-        const auto& config = models.get_simplex_config();
-        if (dev == "metal" && config.is_flstm_model()) {
-            spdlog::warn("Falling back to CPU for FLSTM model: {}", config.model_name());
-            dev = "cpu";
-        }
-#endif
-        return dev;
-    }();
+    const std::string device = cli::parse_device(parser);
     models.set_basecaller_batch_params(cli::get_batch_params(parser), device);
 
     if (auto ret = load_and_generate_benchmarks(models, parser, pod5_folder_info, device);

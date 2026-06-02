@@ -164,32 +164,16 @@ std::vector<at::Tensor> load_crf_model_weights(const BasecallModelConfig &model_
 
 namespace {
 
-ModuleHolder<AnyModule> load_lstm_model(const BasecallModelConfig &model_config,
-                                        const at::TensorOptions &options) {
-    auto model = model::CRFModel(model_config);
+template <typename Model>
+ModuleHolder<AnyModule> load_model(const BasecallModelConfig &model_config,
+                                   const at::TensorOptions &options) {
+    auto model = Model(model_config, options);
     auto state_dict = load_crf_model_weights(model_config);
     model->load_state_dict(state_dict);
     model->to(options.dtype().toScalarType());
     model->to(options.device());
     model->eval();
-
-    auto module = AnyModule(model);
-    auto holder = ModuleHolder<AnyModule>(module);
-    return holder;
-}
-
-ModuleHolder<AnyModule> load_tx_model(const BasecallModelConfig &model_config,
-                                      const at::TensorOptions &options) {
-    auto model = model::TxModel(model_config, options);
-    auto state_dict = load_crf_model_weights(model_config);
-    model->load_state_dict(state_dict);
-    model->to(options.dtype().toScalarType());
-    model->to(options.device());
-    model->eval();
-
-    auto module = AnyModule(model);
-    auto holder = ModuleHolder<AnyModule>(module);
-    return holder;
+    return ModuleHolder<AnyModule>(std::move(model));
 }
 
 }  // namespace
@@ -204,9 +188,9 @@ ModuleHolder<AnyModule> load_crf_model(const BasecallModelConfig &model_config,
     c10::cuda::OptionalCUDAGuard device_guard(device);
 #endif
     if (model_config.is_tx_model()) {
-        return load_tx_model(model_config, options);
+        return load_model<model::TxModel>(model_config, options);
     }
-    return load_lstm_model(model_config, options);
+    return load_model<model::CRFModel>(model_config, options);
 }
 
 size_t auto_calculate_num_runners(const BasecallModelConfig &model_config, float memory_fraction) {

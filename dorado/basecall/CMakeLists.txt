@@ -21,12 +21,10 @@ dorado_add_library(dorado_basecall
         decode/beam_search.h
         decode/CPUDecoder.cpp
         decode/CPUDecoder.h
-        decode/CUDADecoder.h
         decode/Decoder.cpp
         decode/Decoder.h
         model/CRFModel.cpp
         model/CRFModel.h
-        model/MetalCRFModel.h
         model/TxModel.cpp
         model/TxModel.h
         ModelRunner.cpp
@@ -44,9 +42,14 @@ dorado_add_library(dorado_basecall
 if(APPLE)
     target_sources(dorado_basecall
         PRIVATE
-            MetalCaller.cpp
+            caller/MetalCaller.cpp
+            caller/MetalLSTMCaller.cpp
+            caller/MetalLSTMCaller.h
+            caller/MPSCaller.cpp
+            caller/MPSCaller.h
             MetalModelRunner.cpp
             model/MetalCRFModel.cpp
+            model/MetalCRFModel.h
     )
 else()
     target_sources(dorado_basecall
@@ -54,6 +57,7 @@ else()
             CudaCaller.cpp
             CudaModelRunner.cpp
             decode/CUDADecoder.cpp
+            decode/CUDADecoder.h
     )
 endif()
 

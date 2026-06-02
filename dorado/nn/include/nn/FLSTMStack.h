@@ -9,7 +9,7 @@
 namespace dorado::nn {
 
 struct FLSTMLayerImpl : torch::nn::Module {
-    FLSTMLayerImpl(int C, int K);
+    FLSTMLayerImpl(int C, int K, at::TensorOptions opts);
 
     at::Tensor forward(at::Tensor x);
 
@@ -26,7 +26,7 @@ private:
 TORCH_MODULE(FLSTMLayer);
 
 struct FLSTMStackImpl : RNNStackImpl {
-    FLSTMStackImpl(int num_layers, int C, int K, bool first_reverse);
+    FLSTMStackImpl(int num_layers, int C, int K, bool first_reverse, at::TensorOptions opts);
 
     at::Tensor forward(at::Tensor x) override;
 
