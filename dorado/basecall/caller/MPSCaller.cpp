@@ -89,7 +89,7 @@ MPSCaller::MPSCaller(const config::BasecallModelConfig &model_config) : MetalCal
     // Cache common options.
     {
         // TODO: non-Tx doesn't honour the config's n_base
-        const int n_base = model_config.is_tx_model() ? m_config.tx->crf.n_base : 4;
+        const int n_base = model_config.is_tx_model() ? model_config.tx->crf.n_base : 4;
         m_states = std::pow(n_base, model_config.state_len);
 
         m_decoder_options = decode::DecoderOptions();
@@ -97,7 +97,7 @@ MPSCaller::MPSCaller(const config::BasecallModelConfig &model_config) : MetalCal
         m_decoder_options.q_scale = model_config.qscale;
 
         if (model_config.is_tx_model() &&
-            m_decoder_options.blank_score != m_config.tx->crf.blank_score) {
+            m_decoder_options.blank_score != model_config.tx->crf.blank_score) {
             spdlog::warn("Transformer model config does not have the expected blank score");
         }
     }
