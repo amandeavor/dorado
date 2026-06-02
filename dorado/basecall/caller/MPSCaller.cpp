@@ -38,8 +38,11 @@ bool is_mps_flstm_broken() {
 
         spdlog::warn(
                 "Torch's MPS backend is buggy for fLSTM before macOS {}.{}.{}. Falling back to CPU "
-                "instead. This will be slower than running with `--device cpu`!",
+                "instead.",
                 min_version.majorVersion, min_version.minorVersion, min_version.patchVersion);
+        spdlog::warn(
+                "Explicitly running with `--device cpu` is recommended on this device, as it will "
+                "perform faster than allowing MPS fallback.");
         return false;
     }();
     return !is_working;
