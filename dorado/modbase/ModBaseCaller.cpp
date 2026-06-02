@@ -64,7 +64,7 @@ ModBaseCaller::ModBaseData::ModBaseData(const config::ModBaseModelConfig& config
         c10::cuda::CUDAStreamGuard guard(*stream);
         auto input_sigs = torch::empty({batch_size, 1, get_sig_len()}, opts);
         auto input_seqs = torch::empty({batch_size, get_seq_len(), channels}, opts);
-        module_holder.forward(input_sigs, input_seqs);
+        module_holder->forward(input_sigs, input_seqs);
         stream->synchronize();
     }
 #endif
@@ -259,7 +259,7 @@ void ModBaseCaller::modbase_task_thread_fn(size_t model_id) {
 #endif
         std::unique_lock<std::mutex> task_lock(task->mut);
         stats::Timer timer;
-        task->out = model_data->module_holder.forward(task->input_sigs, task->input_seqs);
+        task->out = model_data->module_holder->forward(task->input_sigs, task->input_seqs);
 #if DORADO_CUDA_BUILD
         if (model_data->stream.has_value()) {
             model_data->stream->synchronize();
