@@ -3,8 +3,6 @@
 #include "utils/dev_utils.h"
 #include "utils/simd.h"
 
-#include <torch/csrc/jit/serialization/pickle.h>
-#include <torch/script.h>
 #include <torch/serialize.h>
 
 #include <cstddef>
@@ -145,7 +143,7 @@ void shift_scale_tensor_i16_to_f16_inplace_impl(at::Tensor& tensor, float shift,
 }  // namespace
 
 void serialise_tensor(const at::Tensor& t, const std::string& path) {
-    auto bytes = torch::jit::pickle_save(t);
+    auto bytes = torch::pickle_save(t);
     std::ofstream fout(path);
     fout.write(bytes.data(), bytes.size());
     fout.close();
@@ -333,7 +331,7 @@ std::string tensor_shape_as_string(const at::Tensor& tensor) {
 }
 
 void save_tensor(const at::Tensor& tensor, const std::string& file_path) {
-    const std::vector<char> pickled = torch::jit::pickle_save(tensor);
+    const std::vector<char> pickled = torch::pickle_save(tensor);
     std::ofstream fout(file_path, std::ios::out | std::ios::binary);
     fout.write(std::data(pickled), std::size(pickled));
 }
