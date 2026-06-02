@@ -24,8 +24,6 @@ target_sources(dorado_secondary
         model_slot_attention_consensus.cpp
         model_slot_attention_consensus.h
         model_torch_base.cpp
-        model_torch_script.cpp
-        model_torch_script.h
         model_variant_perceiver.cpp
         model_variant_perceiver.h
         model_weights.cpp
