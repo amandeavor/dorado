@@ -17,10 +17,6 @@ std::optional<const ChunkBenchmarks::ChunkTimings> ChunkBenchmarks::get_chunk_ti
     std::map<GPUName, GPUName> gpu_name_alias = {
             {"NVIDIA A100-PCIE-40GB", "NVIDIA A100 80GB PCIe"},
             {"NVIDIA A800 80GB PCIe", "NVIDIA A100 80GB PCIe"},
-            {"NVIDIA H100 PCIe", "NVIDIA H100 NVL"},
-            {"NVIDIA RTX PRO 4500 Blackwell", "NVIDIA RTX PRO 5000 Blackwell"},
-            {"NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
-             "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition"},
     };
 
     auto alias_name = gpu_name_alias.find(gpu_name);
