@@ -32,6 +32,13 @@ public:
     void restore_convolution_auxiliary_data();
 
     at::Tensor device_chunk_intervals;
+    std::int32_t chunk_size_granularity() const { return chunk_size_granularity_; }
+    std::int32_t total_num_granularity() const { return total_num_granularity_; }
+    std::int32_t total_num_varlen_chunks() const { return total_num_varlen_chunks_; }
+    std::int32_t max_num_granularity() const { return max_num_granularity_; }
+    void apply_stride_to_chunk_size_granularity(std::int32_t stride) {
+        chunk_size_granularity_ /= stride;
+    }
 
     void create_auxiliary_data(const c10::Device& device, KoiThreads& thread_pool, bool is_lstm_model);
 
@@ -43,15 +50,10 @@ public:
     std::span<const std::int32_t> chunk_sizes() const {  return chunk_sizes_; }
 
     at::Tensor device_chunk_intervals;
-    // ! Need to make sure device_chunk_table is used in Decoder !
     at::Tensor device_chunk_table;  // Torch Tensor of shape (total_num_varlen_chunks, 2). Column 0 is chunk start. Column 1 is chunk_length
-    at::Tensor conv_load_lut;       // Torch Tensor of shape total_num_granularity
-    at::Tensor conv_store_lut;      // Torch Tensor of shape total_num_granularity
-    at::Tensor qkv_rope_lut;
-    int chunk_size_granularity;  // This should be chunk_size_granularity() from BasecallModelConfig.h
-    int total_num_granularity;    // This is entire input length divided by chunk_size_granularity
-    int total_num_varlen_chunks;  // Amount of varlen chunks in batch
-    int max_num_granularity;        // Given CudaCaller's batch_size and chunk_size, max amount of chunks?
+    at::Tensor conv_load_lut;       // Torch Tensor of shape total_num_granularity_
+    at::Tensor conv_store_lut;      // Torch Tensor of shape total_num_granularity_
+    at::Tensor qkv_rope_lut;        // Torch tensor of shape total_num_granularity_, padded to be multiple of 4, explained in .cpp
 
 private:
     at::Tensor workspace_;
@@ -63,6 +65,11 @@ private:
     std::vector<std::int32_t> chunk_sizes_;
     std::vector<std::int32_t> chunk_table_;
     std::vector<std::int32_t> chunk_intervals_;
+
+    std::int32_t chunk_size_granularity_;   // chunk_size_granularity() from BasecallModelConfig.h
+    std::int32_t total_num_granularity_;    // Input length divided by chunk_size_granularity
+    std::int32_t total_num_varlen_chunks_;  // Amount of varlen chunks in batch
+    std::int32_t max_num_granularity_;      // Given CudaCaller's batch_size and chunk_size, max amount of granularity chunks
 };
 
 }  // namespace dorado::nn

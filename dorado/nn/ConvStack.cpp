@@ -162,7 +162,7 @@ void ConvStackImpl::run_koi(WorkingMemory &wm, const AuxiliaryData *const aux) {
 at::Tensor ConvStackImpl::run_koi_vcs_tx(at::Tensor x, AuxiliaryData *aux) {
     for (auto &layer : layers) {
         x = layer.run_koi_vcs_tx(x, aux);
-        aux->chunk_size_granularity /= layer.params.stride;
+        aux->apply_stride_to_chunk_size_granularity(layer.params.stride);
     }
     return x;
 }
@@ -434,7 +434,7 @@ at::Tensor ConvStackImpl::ConvLayer::run_koi_vcs_tx(at::Tensor &conv_input,
             // There, a vector of N, T is passed as chunk intervals, and in create_empty_input in CudaCaller, I make it so the very first
             // M dimension input is the biggest it can ever be given the benchmarks for the GPU it is running on.
             if (conv_layer_num != 4) {
-                M_out = (M_out / stride) + (aux->max_num_granularity * next_layer_padding);
+                M_out = (M_out / stride) + (aux->max_num_granularity() * next_layer_padding);
             }
             else {
                 M_out = aux->qkv_rope_lut.size(0) * 64;
@@ -446,14 +446,14 @@ at::Tensor ConvStackImpl::ConvLayer::run_koi_vcs_tx(at::Tensor &conv_input,
 
     koi_vcs_sup_fill_conv_load_store_lut(
         stream,
-        aux->total_num_varlen_chunks,
+        aux->total_num_varlen_chunks(),
         aux->device_chunk_table.data_ptr<int>(),
         aux->conv_load_lut.data_ptr<int>(),  // Load and Store LUTs make sense for them to be in AuxiliaryData.h, as their
         aux->conv_store_lut.data_ptr<int>(), // shape depend on total_num_granularity, which changes between batches
         conv_layer_num == 0 ? nullptr : conv_input.data_ptr(),
         conv_layer_num == 0 ? 0 : M_out,
         C_in,
-        aux->chunk_size_granularity,    // This value gets updated according to ConvLayers stride in ConvStackImpl::run_koi_vcs_tx
+        aux->chunk_size_granularity(),    // This value gets updated according to ConvLayers stride in ConvStackImpl::run_koi_vcs_tx
         stride,
         padding,
         next_layer_padding
@@ -468,7 +468,7 @@ at::Tensor ConvStackImpl::ConvLayer::run_koi_vcs_tx(at::Tensor &conv_input,
             b_device.data_ptr(),
             aux->conv_load_lut.data_ptr<int>(),
             aux->conv_store_lut.data_ptr<int>(),
-            aux->total_num_granularity,
+            aux->total_num_granularity(),
             M_out   // M dimension of output tensor
         );
     }
@@ -481,7 +481,7 @@ at::Tensor ConvStackImpl::ConvLayer::run_koi_vcs_tx(at::Tensor &conv_input,
             b_device.data_ptr(),
             aux->conv_load_lut.data_ptr<int>(),
             aux->conv_store_lut.data_ptr<int>(),
-            aux->total_num_granularity,
+            aux->total_num_granularity(),
             M_input,
             M_out,
             winlen,

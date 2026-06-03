@@ -69,9 +69,9 @@ DecodeData CUDADecoder::beam_search_part_1(DecodeData data) const {
     if (data.aux && (data.aux->device_in_layout.defined() || data.aux->device_chunk_table.defined())) {
         if (data.aux->conv_load_lut.defined()) {
             // Tx VCS
-            aux = at::empty(data.aux->total_num_granularity * (T + 1) * (C + 4 * options.beam_width), tensor_options_int8);
-            path = at::zeros(data.aux->total_num_granularity * (T + 1), tensor_options_int32);
-            moves_sequence_qstring = at::zeros({3, data.aux->total_num_granularity * T}, tensor_options_int8);
+            aux = at::empty(data.aux->total_num_granularity() * (T + 1) * (C + 4 * options.beam_width), tensor_options_int8);
+            path = at::zeros(data.aux->total_num_granularity() * (T + 1), tensor_options_int32);
+            moves_sequence_qstring = at::zeros({3, data.aux->total_num_granularity() * T}, tensor_options_int8);
         }
         else {
             // lstm VCS

@@ -597,7 +597,7 @@ void TxEncoderImpl::koi_forward(utils::ScaledTensor &scaled_tensor, at::Tensor &
             // save_tensor(qkv, path_to_store);
             // path_to_store = "/home/OXFORDNANOLABS/ebalaguerrodon/another_dorado_master/dorado0/dorado/debug_tensors/attn_chunk_table";
             // save_tensor(aux->device_chunk_table, path_to_store);
-            res = koi_vcs_attn(stream, qkv.data_ptr(), aux->device_chunk_table.data_ptr<int>(), aux->total_num_varlen_chunks, t_out_attn.data_ptr());
+            res = koi_vcs_attn(stream, qkv.data_ptr(), aux->device_chunk_table.data_ptr<int>(), aux->total_num_varlen_chunks(), t_out_attn.data_ptr());
             // path_to_store = "/home/OXFORDNANOLABS/ebalaguerrodon/another_dorado_master/dorado0/dorado/debug_tensors/attn_out";
             // save_tensor(t_out_attn, path_to_store);
             // C10_CUDA_CHECK(cudaGetLastError());
@@ -878,20 +878,20 @@ at::Tensor TxEncoderStackImpl::forward(const at::Tensor &x, [[maybe_unused]] Aux
         if (use_vcs && aux) {
             // N = total amount of min_chunksize_blocks within batch
             // T = min_working_block which is min_chunksize / ConvStack_stride
-            T = aux->chunk_size_granularity;    // This value gets updated according to ConvLayers stride in ConvStackImpl::run_koi_vcs_tx
+            T = aux->chunk_size_granularity();    // This value gets updated according to ConvLayers stride in ConvStackImpl::run_koi_vcs_tx
             // assert(T == 64);
             // Cannot use total_num_granularity from aux for N as it changes from batch to batch
             // std::cerr << "x.size(0) = " << x.size(0) << "\nx.size(1) = " << x.size(1) << "\nx.size(2) = " << x.size(2);
             // assert((x.size(1) % T) == 0);
             // N = x.size(1) / T;
             // assert(N == aux->max_num_granularity);
-            N = aux->total_num_granularity;
+            N = aux->total_num_granularity();
             // x is max_num_granularity, total_num_granularity cannot be bigger than max_num_granularity
             // max_num_granularity is always even
             // Why do this? Koi's A100 MatMulOp implementation requires M to be a multiple of 256
             N += ((N % 4) == 0) ? 0 : (4 - (N % 4));
-            if (N > aux->max_num_granularity) {
-                spdlog::error("Tx Encoder total_num_granularity is exceeding max_num_granularity\ntotal_num_granularity = {}, max_num_granularity = {}", aux->total_num_granularity, aux->max_num_granularity);
+            if (N > aux->max_num_granularity()) {
+                spdlog::error("Tx Encoder total_num_granularity is exceeding max_num_granularity\ntotal_num_granularity = {}, max_num_granularity = {}", aux->total_num_granularity(), aux->max_num_granularity());
             }
             // Underlying input layout is (C / 8, M_in, 8)
             C = static_cast<int>(x.size(0) * 8);
@@ -902,7 +902,7 @@ at::Tensor TxEncoderStackImpl::forward(const at::Tensor &x, [[maybe_unused]] Aux
             auto stream = at::cuda::getCurrentCUDAStream().stream();
             koi_vcs_sup_fill_qkv_rope_lut(
                 stream,
-                aux->total_num_varlen_chunks,
+                aux->total_num_varlen_chunks(),
                 T,
                 aux->device_chunk_table.data_ptr<int>(),
                 aux->qkv_rope_lut.data_ptr<int>()
