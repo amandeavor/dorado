@@ -319,6 +319,8 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> CudaCaller::create_input_output_t
         std::int64_t aux_size;
         if (m_config.is_tx_model()) {
             input = storage.slice(0, 0, input_bytes).view(scalar_type).view({C_in, N * T_in});
+            // Add initial padding here
+            input.slice(1, 0, (m_config.convs.front().winlen / 2)).zero_();
             // Tx AuxiliaryData worse-case scenario is if all chunks are of chunk_size_granularity
             // 2 for chunk_table, 3 for luts, all being int32
             aux_size = 5 * (N * (T_in / m_config.chunk_size_granularity()));

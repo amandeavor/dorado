@@ -28,23 +28,15 @@ CudaModelRunner::CudaModelRunner(std::shared_ptr<CudaCaller> caller, size_t batc
 void CudaModelRunner::accept_chunk(int chunk_idx, const at::Tensor &chunk) {
     if (m_caller->variable_chunk_sizes()) {
         if (config().is_tx_model()) {
-            // Add initial padding if current_batch is empty
-            if (chunk_idx == 0) {
-                m_input.index_put_({
-                    torch::indexing::Ellipsis,
-                    torch::indexing::Slice(0, m_first_conv_padding_int)
-                }, m_first_conv_padding_tensor);
-
-                m_chunk_offset += m_first_conv_padding_int;
-            }
-            // Tx VCS Input is of shape (C_in, N * T + max_possible padding)
+            // Initial padding is added in create_input_output_tensor in CudaCaller
+            // Tx VCS Input is of shape (C_in, N * T)
             int chunk_offset_end = m_chunk_offset + chunk.size(1);
             m_input.index_put_({
                 torch::indexing::Ellipsis,
                 torch::indexing::Slice(m_chunk_offset, chunk_offset_end)
             }, chunk);
 
-            // Only care about size of raw_data, not added padding
+            // Only care about size of raw_data here, not added padding
             m_chunk_sizes.emplace_back(chunk.size(1));
 
             m_input.index_put_({
