@@ -71,13 +71,13 @@ std::unique_ptr<nn::AuxiliaryData> create_empty_input(at::Tensor &in,
         workspace = torch::empty({6 * ((T / stride) + 3) * N}, workspace_options);
     }
     else {
-        // This is absolute worse-case scenario, where all reads are less than chunk_size_granularity
+        // This is absolute worse-case scenario, where all reads are <= chunk_size_granularity
         assert((T % chunk_size_granularity) == 0);
         in = torch::empty({C, (N * T) + (N * (T / chunk_size_granularity) * 4)}, in_options);
     }
 
     auto aux = std::make_unique<nn::AuxiliaryData>(workspace, N, T, stride, chunk_size_granularity,
-                                                   std::vector<std::int32_t>(N, T));
+                                                   std::vector<std::int32_t>(N, T), is_lstm_model);
     aux->create_auxiliary_data(in_options.device(), thread_pool, is_lstm_model);
     return aux;
 }
@@ -440,7 +440,7 @@ CudaCaller::BatchDimsAndMaxSizes CudaCaller::calculate_batch_sizes(
 
     // ? Creation of shorter chunk size queue should be skipped for VCS Tx right ?
     if (pipeline_type == PipelineType::simplex &&
-        !(model_config.is_tx_model() && chunk_granularity)) {
+        !(model_config.is_tx_model() && chunk_granularity == 768)) {
         const char *env_extra_chunk_sizes = std::getenv("DORADO_EXTRA_CHUNK_SIZES");
         if (env_extra_chunk_sizes != nullptr) {
             constexpr char SEPARATOR = ';';

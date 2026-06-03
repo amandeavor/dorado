@@ -75,7 +75,8 @@ std::vector<decode::DecodedChunk> CudaModelRunner::call_chunks(int num_chunks) {
     if (m_caller->variable_chunk_sizes()) {
         aux = std::make_unique<nn::AuxiliaryData>(m_aux, batch_size(), chunk_size(),
                                                   config().stride,
-                                                  config().chunk_size_granularity(), m_chunk_sizes);
+                                                  config().chunk_size_granularity(), m_chunk_sizes,
+                                                  (config().is_lstm_model() || config().is_flstm_model())); // !config().is_tx_model() would do the same here
     }
     auto decoded_chunks = m_caller->call_chunks(m_input, m_output, num_chunks, aux.get());
     if (m_caller->variable_chunk_sizes()) {

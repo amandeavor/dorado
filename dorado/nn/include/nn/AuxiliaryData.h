@@ -18,7 +18,8 @@ public:
                   std::int32_t chunk_size,
                   std::int32_t stride,
                   std::int32_t chunk_size_granularity_,
-                  std::span<const std::int32_t> chunk_sizes);
+                  std::span<const std::int32_t> chunk_sizes,
+                  bool is_lstm_model);
 
     std::int32_t N() const { return N_; }
     std::int32_t T_in() const { return T_in_; }
@@ -32,6 +33,7 @@ public:
     void restore_convolution_auxiliary_data();
 
     at::Tensor device_chunk_intervals;
+    bool is_lstm_model() const { return is_lstm_model_; }
     std::int32_t chunk_size_granularity() const { return chunk_size_granularity_; }
     std::int32_t total_num_granularity() const { return total_num_granularity_; }
     std::int32_t total_num_varlen_chunks() const { return total_num_varlen_chunks_; }
@@ -50,7 +52,7 @@ public:
     std::span<const std::int32_t> chunk_sizes() const {  return chunk_sizes_; }
 
     at::Tensor device_chunk_intervals;
-    at::Tensor device_chunk_table;  // Torch Tensor of shape (total_num_varlen_chunks, 2). Column 0 is chunk start. Column 1 is chunk_length
+    at::Tensor device_chunk_table;  // Torch Tensor of shape (total_num_varlen_chunks, 2). Column 0 is chunk_start. Column 1 is chunk_length
     at::Tensor conv_load_lut;       // Torch Tensor of shape total_num_granularity_
     at::Tensor conv_store_lut;      // Torch Tensor of shape total_num_granularity_
     at::Tensor qkv_rope_lut;        // Torch tensor of shape total_num_granularity_, padded to be multiple of 4, explained in .cpp
@@ -70,6 +72,8 @@ private:
     std::int32_t total_num_granularity_;    // Input length divided by chunk_size_granularity
     std::int32_t total_num_varlen_chunks_;  // Amount of varlen chunks in batch
     std::int32_t max_num_granularity_;      // Given CudaCaller's batch_size and chunk_size, max amount of granularity chunks
+
+    bool is_lstm_model_;
 };
 
 }  // namespace dorado::nn

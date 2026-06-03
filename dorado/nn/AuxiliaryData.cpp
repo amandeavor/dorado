@@ -24,7 +24,8 @@ AuxiliaryData::AuxiliaryData(at::Tensor workspace,
                              const std::int32_t chunk_size,
                              const std::int32_t stride,
                              const std::int32_t chunk_size_granularity,
-                             const std::span<const std::int32_t> chunk_sizes)
+                             const std::span<const std::int32_t> chunk_sizes,
+                             const bool is_lstm_model)
         : workspace_(std::move(workspace)),
           N_(batch_size),
           T_in_(chunk_size),
@@ -32,7 +33,8 @@ AuxiliaryData::AuxiliaryData(at::Tensor workspace,
           T_lstm_(1 + T_out_ + 1),
           stride_(stride),
           chunk_sizes_(std::cbegin(chunk_sizes), std::cend(chunk_sizes)),
-          chunk_size_granularity_(chunk_size_granularity) {
+          chunk_size_granularity_(chunk_size_granularity),
+          is_lstm_model_(is_lstm_model) {
     T_lstm_ += T_lstm_ & 1;  // needs to be even for easier LUT creation
 
     total_num_varlen_chunks_ = std::ssize(chunk_sizes_);
@@ -121,7 +123,7 @@ void AuxiliaryData::create_auxiliary_data([[maybe_unused]] const c10::Device& de
         qkv_rope_lut = at::zeros({qkv_rope_lut_size}, gpu_options);
 
         max_num_granularity_ = NT_in_max() / chunk_size_granularity_;
-        
+
         // Why is qkv_rope_lut intialised with zeros?
         // qkv_rope gets sincos values according to T value within lut
         // Input to tx encoder is "padded" to be multiple of 256 to accommodate Koi's MatMulOp
