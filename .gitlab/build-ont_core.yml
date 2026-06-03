@@ -3,10 +3,10 @@
 .test_ont_core_compatibility:
   stage: build
   script:
-    # The ont_core build expects to be using conan 1.x, so install it
+    # The ont_core build expects to be using conan, so install it
     # into a venv.
     - !reference [.create_venv]
-    - pip install -U "conan<2"
+    - pip install -U "conan"
     - conan --version
     # Merged-result MR pipelines run against a synthetic merge commit which
     # does not exist in the Dorado repo that ont_core clones. In that case
