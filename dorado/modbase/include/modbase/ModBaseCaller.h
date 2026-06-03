@@ -43,7 +43,7 @@ public:
         std::unique_ptr<ModBaseScaler> scaler;
 
     private:
-        utils::ModuleWrapper module_holder;
+        torch::nn::ModuleHolder<torch::nn::AnyModule> module_holder;
         const MotifMatcher matcher;
         std::deque<std::shared_ptr<ModBaseTask>> input_queue;
         std::mutex input_lock;

@@ -32,6 +32,4 @@ inline void load_state_dict(torch::nn::Module& module, const std::vector<at::Ten
     }
 }
 
-using ModuleWrapper = torch::nn::ModuleHolder<torch::nn::AnyModule>;
-
 }  // namespace dorado::utils
