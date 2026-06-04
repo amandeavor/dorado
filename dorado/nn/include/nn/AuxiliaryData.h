@@ -19,6 +19,7 @@ public:
                   std::int32_t stride,
                   std::int32_t chunk_size_granularity_,
                   std::span<const std::int32_t> chunk_sizes,
+                  const std::int32_t max_chunk_size,
                   bool is_lstm_model);
 
     std::int32_t N() const { return N_; }
@@ -38,6 +39,7 @@ public:
     std::int32_t total_num_granularity() const { return total_num_granularity_; }
     std::int32_t total_num_varlen_chunks() const { return total_num_varlen_chunks_; }
     std::int32_t max_num_granularity() const { return max_num_granularity_; }
+    std::int32_t max_chunk_size_tx_enc() const { return max_chunk_size_ / stride_; }
     void apply_stride_to_chunk_size_granularity(std::int32_t stride) {
         chunk_size_granularity_ /= stride;
     }
@@ -72,6 +74,7 @@ private:
     std::int32_t total_num_granularity_;    // Input length divided by chunk_size_granularity
     std::int32_t total_num_varlen_chunks_;  // Amount of varlen chunks in batch
     std::int32_t max_num_granularity_;      // Given CudaCaller's batch_size and chunk_size, max amount of granularity chunks
+    std::int32_t max_chunk_size_;           // Acquired from model's config "[basecaller] chunksize"
 
     bool is_lstm_model_;
 };

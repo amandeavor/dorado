@@ -471,6 +471,9 @@ void TxEncoderImpl::koi_forward(utils::ScaledTensor &scaled_tensor, at::Tensor &
         //Rotary embedding as a torch tensor
         auto rot_bfrs = self_attn->rotary_emb->named_buffers();
         auto max_T = 16 * (rot_bfrs["sin_freqs"].size(0) / 16);
+        if (aux) {
+            assert(max_T >= aux->max_chunk_size_tx_enc());
+        }
         sincos_bfr = torch::empty({max_T, D / 2, 2}, f16_opts);
         sincos_bfr.select(2, 0) = rot_bfrs["sin_freqs"].slice(0, 0, max_T).view({max_T, D / 2});
         sincos_bfr.select(2, 1) = rot_bfrs["cos_freqs"].slice(0, 0, max_T).view({max_T, D / 2});
@@ -550,8 +553,7 @@ void TxEncoderImpl::koi_forward(utils::ScaledTensor &scaled_tensor, at::Tensor &
     KoiTensorExt fc2_out_mn(t_fc2_out.flatten(0, 1), {'M', 'N', 'm', 'n'});
     KoiTensorExt fc2_out_ntc(t_fc2_out, {'N', 'T', 'C', 't', 'c'});
     
-    // ! DEBUGGING PURPOSES ONLY
-    KoiTensorExt sincos(sincos_bfr.slice(0, 0, 1024 / 16), {'T', 'D', 't', 'd'});
+    KoiTensorExt sincos(sincos_bfr.slice(0, 0, (aux ? aux->max_chunk_size_tx_enc() : T) / 16), {'T', 'D', 't', 'd'});
     KoiTensorExt proj_w(proj_weight, {'N', 'K', 'n', 'k'});
     KoiTensorExt proj_b(proj_bias, {'N'});
 
@@ -559,49 +561,16 @@ void TxEncoderImpl::koi_forward(utils::ScaledTensor &scaled_tensor, at::Tensor &
     int calls = 0;
     if (res == KOI_SUCCESS && ++calls) {
         // Fused QKV Matmul Plus Rotary embedding
-        // std::cerr << "Before QKV+RoPE\n";
-        // C10_CUDA_CHECK(cudaGetLastError());
-        // C10_CUDA_CHECK(cudaDeviceSynchronize());
-        // std::string path_to_store = "/home/OXFORDNANOLABS/ebalaguerrodon/another_dorado_master/dorado0/dorado/debug_tensors/qkv_rope_in_int8.pt";
-        // save_tensor(x, path_to_store);
-        // path_to_store = "/home/OXFORDNANOLABS/ebalaguerrodon/another_dorado_master/dorado0/dorado/debug_tensors/qkv_rope_in_scale.pt";
-        // save_tensor(scaled_tensor.scale, path_to_store);
-        // path_to_store = "/home/OXFORDNANOLABS/ebalaguerrodon/another_dorado_master/dorado0/dorado/debug_tensors/qkv_rope_weights_int8.pt";
-        // save_tensor(wqkv_weights.t, path_to_store);
-        // path_to_store = "/home/OXFORDNANOLABS/ebalaguerrodon/another_dorado_master/dorado0/dorado/debug_tensors/qkv_rope_weights_scale.pt";
-        // save_tensor(wqkv_weights.scale, path_to_store);
-        // path_to_store = "/home/OXFORDNANOLABS/ebalaguerrodon/another_dorado_master/dorado0/dorado/debug_tensors/qkv_rope_sincos.pt";
-        // save_tensor(sincos_bfr.slice(0, 0, 1024 / 16), path_to_store);
-        // path_to_store = "/home/OXFORDNANOLABS/ebalaguerrodon/another_dorado_master/dorado0/dorado/debug_tensors/qkv_rope_out_bfr.pt";
-        // save_tensor(qkv, path_to_store);
-        // path_to_store = "/home/OXFORDNANOLABS/ebalaguerrodon/another_dorado_master/dorado0/dorado/debug_tensors/qkv_rope_lut.pt";
-        // save_tensor(aux->qkv_rope_lut, path_to_store);
-        // path_to_store = "/home/OXFORDNANOLABS/ebalaguerrodon/another_dorado_master/dorado0/dorado/debug_tensors/N_T_C.pt";
-        // save_tensor(torch::tensor([N, T, C]), path_to_store);
         utils::ScopedProfileRange spr("QKV+ROTE", 3);
         res = koi_qkv_rotary(stream, &in, &weights_qkv, &sincos, &out_qkv,
                              aux ? aux->qkv_rope_lut.data_ptr<int>() : nullptr,
                              ctr[0].data_ptr<int>());
-        // std::cerr << "After QKV+RoPE\n";
-        // C10_CUDA_CHECK(cudaGetLastError());
-        // C10_CUDA_CHECK(cudaDeviceSynchronize());
-        // std::cerr << "After QKV+RoPE\n";
     }
     if (res == KOI_SUCCESS && ++calls) {
-        // Apply masket attention
+        // Apply masked attention
         utils::ScopedProfileRange spr("MEA", 3);
         if (aux) {
-            // C10_CUDA_CHECK(cudaGetLastError());
-            // C10_CUDA_CHECK(cudaDeviceSynchronize());
-            // std::string path_to_store = "/home/OXFORDNANOLABS/ebalaguerrodon/another_dorado_master/dorado0/dorado/debug_tensors/attn_in";
-            // save_tensor(qkv, path_to_store);
-            // path_to_store = "/home/OXFORDNANOLABS/ebalaguerrodon/another_dorado_master/dorado0/dorado/debug_tensors/attn_chunk_table";
-            // save_tensor(aux->device_chunk_table, path_to_store);
             res = koi_vcs_attn(stream, qkv.data_ptr(), aux->device_chunk_table.data_ptr<int>(), aux->total_num_varlen_chunks(), t_out_attn.data_ptr());
-            // path_to_store = "/home/OXFORDNANOLABS/ebalaguerrodon/another_dorado_master/dorado0/dorado/debug_tensors/attn_out";
-            // save_tensor(t_out_attn, path_to_store);
-            // C10_CUDA_CHECK(cudaGetLastError());
-            // C10_CUDA_CHECK(cudaDeviceSynchronize());
         }
         else {
             res = koi_masked_attention(stream, win_upper, win_lower, &out_qkv, &out_attn);
@@ -876,29 +845,19 @@ at::Tensor TxEncoderStackImpl::forward(const at::Tensor &x, [[maybe_unused]] Aux
     if (use_koi_tiled) {
         int N, T, C;
         if (use_vcs && aux) {
-            // N = total amount of min_chunksize_blocks within batch
-            // T = min_working_block which is min_chunksize / ConvStack_stride
-            T = aux->chunk_size_granularity();    // This value gets updated according to ConvLayers stride in ConvStackImpl::run_koi_vcs_tx
-            // assert(T == 64);
-            // Cannot use total_num_granularity from aux for N as it changes from batch to batch
-            // std::cerr << "x.size(0) = " << x.size(0) << "\nx.size(1) = " << x.size(1) << "\nx.size(2) = " << x.size(2);
-            // assert((x.size(1) % T) == 0);
-            // N = x.size(1) / T;
-            // assert(N == aux->max_num_granularity);
+            // N = total amount of chunk_size_granularity within batch
+            // T = chunk_size_granularity which is min_chunksize / ConvStack_stride
             N = aux->total_num_granularity();
-            // x is max_num_granularity, total_num_granularity cannot be bigger than max_num_granularity
-            // max_num_granularity is always even
-            // Why do this? Koi's A100 MatMulOp implementation requires M to be a multiple of 256
+            T = aux->chunk_size_granularity();      // This value gets updated according to ConvLayers stride in ConvStackImpl::run_koi_vcs_tx
+            C = static_cast<int>(x.size(0) * 8);    // Underlying input layout is (C / 8, M_in, 8)
+
+            // Why do this? Koi's linear.cu MatMulOp implementation requires M to be a multiple of 256
             N += ((N % 4) == 0) ? 0 : (4 - (N % 4));
             if (N > aux->max_num_granularity()) {
                 spdlog::error("Tx Encoder total_num_granularity is exceeding max_num_granularity\ntotal_num_granularity = {}, max_num_granularity = {}", aux->total_num_granularity(), aux->max_num_granularity());
             }
-            // Underlying input layout is (C / 8, M_in, 8)
-            C = static_cast<int>(x.size(0) * 8);
+            assert(T == 64);
 
-            // Fill qkv_rope_lut that get used on all TxEncoder layers
-            // No need to fill attn_lut as is just aux->device_chunk_table
-            // std::cerr << "Filling qkv_rope_lut" << '\n';
             auto stream = at::cuda::getCurrentCUDAStream().stream();
             koi_vcs_sup_fill_qkv_rope_lut(
                 stream,
@@ -907,8 +866,6 @@ at::Tensor TxEncoderStackImpl::forward(const at::Tensor &x, [[maybe_unused]] Aux
                 aux->device_chunk_table.data_ptr<int>(),
                 aux->qkv_rope_lut.data_ptr<int>()
             );
-            // C10_CUDA_CHECK(cudaGetLastError());
-            // C10_CUDA_CHECK(cudaDeviceSynchronize());
         }
         else {
             N = static_cast<int>(x.size(0));
@@ -921,16 +878,7 @@ at::Tensor TxEncoderStackImpl::forward(const at::Tensor &x, [[maybe_unused]] Aux
             utils::ScopedProfileRange spr("Tile F16", 2);
             if (use_vcs && aux) {
                 // Underlying input layout is (C / 8, M_in, 8)
-                // std::cerr << ", x shape: [";
-                // for (int i = 0; i < x.dim(); ++i) {
-                //     std::cerr << x.size(i);
-                //     if (i + 1 < x.dim()) {
-                //         std::cerr << ", ";
-                //     }
-                // }
-                // std::cerr << "]" << std::endl;
                 tiled_f16 = x.narrow(1, 0, N * T).view({C / 8, N, T / 16, 16, 8}).permute({1, 2, 0, 3, 4}).contiguous();
-                // std::cerr << "tiled_f16 Tx VCS assigned\n";
             }
             else {
                 tiled_f16 = x.view({N, T / 16, 16, C / 8, 8}).transpose(2, 3).contiguous();
@@ -943,7 +891,6 @@ at::Tensor TxEncoderStackImpl::forward(const at::Tensor &x, [[maybe_unused]] Aux
             // Quanitze tensor to i8 and take the reciprocal of the scale.
             if (aux) {
                 scaled_tensor = utils::quantize_tensor(x.narrow(1, 0, N * T).view({C / 8, N * T, 8}).transpose(0, 1).contiguous().view({N * T, C}), 1);
-                // std::cerr << "scaled_tensor Tx VCS assigned\n";
             }
             else {
                 scaled_tensor = utils::quantize_tensor(x, 2);
@@ -959,8 +906,6 @@ at::Tensor TxEncoderStackImpl::forward(const at::Tensor &x, [[maybe_unused]] Aux
         for (auto &layer : layer_vec) {
             layer->koi_forward(scaled_tensor, tiled_f16, aux);
         }
-
-        // std::cerr << "Done with Tx Encoder\n";
 
         at::Tensor untiled_f16;
         {

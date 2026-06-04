@@ -25,6 +25,7 @@ AuxiliaryData::AuxiliaryData(at::Tensor workspace,
                              const std::int32_t stride,
                              const std::int32_t chunk_size_granularity,
                              const std::span<const std::int32_t> chunk_sizes,
+                             const std::int32_t max_chunk_size,
                              const bool is_lstm_model)
         : workspace_(std::move(workspace)),
           N_(batch_size),
@@ -34,6 +35,7 @@ AuxiliaryData::AuxiliaryData(at::Tensor workspace,
           stride_(stride),
           chunk_sizes_(std::cbegin(chunk_sizes), std::cend(chunk_sizes)),
           chunk_size_granularity_(chunk_size_granularity),
+          max_chunk_size_(max_chunk_size),
           is_lstm_model_(is_lstm_model) {
     T_lstm_ += T_lstm_ & 1;  // needs to be even for easier LUT creation
 
