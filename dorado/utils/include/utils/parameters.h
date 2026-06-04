@@ -1,6 +1,6 @@
 #pragma once
 
-#include <string>
+#include <cstddef>
 
 namespace dorado::utils {
 
@@ -27,12 +27,14 @@ struct ThreadAllocations {
     int aligner_threads{0};
     int barcoder_threads{0};
     int adapter_threads{0};
+    int polya_threads{0};
 };
 
 ThreadAllocations default_thread_allocations(int num_devices,
                                              int num_modbase_threads,
                                              bool enable_aligner,
                                              bool enable_barcoder,
-                                             bool adapter_trimming);
+                                             bool adapter_trimming,
+                                             bool enable_polya);
 
 }  // namespace dorado::utils

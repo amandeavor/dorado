@@ -9,7 +9,8 @@ ThreadAllocations default_thread_allocations(int num_devices,
                                              int num_modbase_threads,
                                              bool enable_aligner,
                                              bool enable_barcoder,
-                                             bool adapter_trimming) {
+                                             bool adapter_trimming,
+                                             bool enable_polya) {
     const int max_threads = std::thread::hardware_concurrency();
     ThreadAllocations allocs;
     allocs.writer_threads = num_devices * 2;
@@ -35,6 +36,8 @@ ThreadAllocations default_thread_allocations(int num_devices,
         allocs.barcoder_threads = enable_barcoder ? thread_split : 0;
         allocs.adapter_threads = adapter_trimming ? thread_split : 0;
     }
+    // TODO: find a better thread count, possibly merged with above.
+    allocs.polya_threads = enable_polya ? max_threads : 0;
     return allocs;
 };
 
