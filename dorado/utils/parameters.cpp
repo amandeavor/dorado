@@ -19,19 +19,21 @@ ThreadAllocations default_thread_allocations(int num_devices,
     allocs.scaler_node_threads = num_devices * 4;
     allocs.splitter_node_threads = num_devices;
     allocs.loader_threads = num_devices;
-    int total_threads_used =
-            (allocs.writer_threads + allocs.read_converter_threads + allocs.read_filter_threads +
-             allocs.modbase_threads + allocs.scaler_node_threads + allocs.loader_threads +
-             allocs.splitter_node_threads);
-    int remaining_threads = max_threads - total_threads_used;
-    remaining_threads = std::max(num_devices * 10, remaining_threads);
-    // Divide up work equally between the aligner, barcoder, and adapter-trimming nodes, or whatever
-    // subset of them are enabled.
-    if (enable_aligner || enable_barcoder || adapter_trimming) {
-        int number_enabled = int(enable_aligner) + int(enable_barcoder) + int(adapter_trimming);
-        allocs.aligner_threads = remaining_threads * int(enable_aligner) / number_enabled;
-        allocs.barcoder_threads = remaining_threads * int(enable_barcoder) / number_enabled;
-        allocs.adapter_threads = remaining_threads * int(adapter_trimming) / number_enabled;
+    const int total_threads_used = allocs.writer_threads + allocs.read_converter_threads +
+                                   allocs.read_filter_threads + allocs.modbase_threads +
+                                   allocs.scaler_node_threads + allocs.loader_threads +
+                                   allocs.splitter_node_threads;
+    const int remaining_threads = std::max(num_devices * 10, max_threads - total_threads_used);
+
+    // Divide up remaining threads between the active optional nodes.
+    const int number_enabled = static_cast<int>(enable_aligner) +
+                               static_cast<int>(enable_barcoder) +
+                               static_cast<int>(adapter_trimming);
+    if (number_enabled > 0) {
+        const int thread_split = remaining_threads / number_enabled;
+        allocs.aligner_threads = enable_aligner ? thread_split : 0;
+        allocs.barcoder_threads = enable_barcoder ? thread_split : 0;
+        allocs.adapter_threads = adapter_trimming ? thread_split : 0;
     }
     return allocs;
 };
