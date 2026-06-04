@@ -705,6 +705,11 @@ test:linux:arm64:dgx_spark:
     - build:linux:arm64:cuda13
 
 test:macos:arm:
+  tags:
+    - osx_arm64
+    - on-prem
+    # We need to pin to a minimum of OSX 15.5 so that hac v6.0.0 runs at a reasonable speed.
+    - osx-15.5
   extends:
     - .macos_arm_runner
     - .test_dorado
