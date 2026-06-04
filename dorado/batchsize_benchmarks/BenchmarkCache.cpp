@@ -18,10 +18,6 @@ std::optional<std::string_view> get_gpu_name_alias(std::string_view gpu_name) {
     constexpr std::pair<std::string_view, std::string_view> gpu_name_alias[]{
             {"NVIDIA A100-PCIE-40GB", "NVIDIA A100 80GB PCIe"},
             {"NVIDIA A800 80GB PCIe", "NVIDIA A100 80GB PCIe"},
-            {"NVIDIA H100 PCIe", "NVIDIA H100 NVL"},
-            {"NVIDIA RTX PRO 4500 Blackwell", "NVIDIA RTX PRO 5000 Blackwell"},
-            {"NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
-             "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition"},
     };
     for (const auto &alias : gpu_name_alias) {
         if (alias.first == gpu_name) {

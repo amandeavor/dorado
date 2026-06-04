@@ -146,10 +146,10 @@ DEFINE_TEST("Saving and loading runtime cache works") {
 DEFINE_TEST("GPU name alias works") {
     BenchmarkCache::with_lock([](BenchmarkCache::CacheProxy proxy) {
         const std::string_view model_name = "dna_r10.4.1_e8.2_400bps_sup@v5.2.0";
-        const auto alised = proxy.get_timings("NVIDIA H100 PCIe", model_name);
-        const auto expected = proxy.get_timings("NVIDIA H100 NVL", model_name);
+        const auto aliased = proxy.get_timings("NVIDIA A100-PCIE-40GB", model_name);
+        const auto expected = proxy.get_timings("NVIDIA A100 80GB PCIe", model_name);
         CATCH_CHECK_FALSE(expected.empty());
-        CATCH_CHECK(tests::entries_equal(expected, alised));
+        CATCH_CHECK(tests::entries_equal(expected, aliased));
     });
 }
 
