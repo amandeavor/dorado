@@ -10,9 +10,10 @@ struct ModBaseModelConfig;
 
 namespace dorado::modbase {
 
-dorado::utils::ModuleWrapper load_modbase_model(const config::ModBaseModelConfig& config,
-                                                const at::TensorOptions& options,
-                                                const int batchsize);
+torch::nn::ModuleHolder<torch::nn::AnyModule> load_modbase_model(
+        const config::ModBaseModelConfig& config,
+        const at::TensorOptions& options,
+        const int batchsize);
 
 std::vector<float> load_kmer_refinement_levels(const config::ModBaseModelConfig& config);
 

@@ -606,9 +606,10 @@ TORCH_MODULE(ModBaseConvLSTMV3CUDAModel);
 
 }  // namespace model
 
-dorado::utils::ModuleWrapper load_modbase_model(const config::ModBaseModelConfig& config,
-                                                const at::TensorOptions& options,
-                                                [[maybe_unused]] const int batchsize) {
+torch::nn::ModuleHolder<torch::nn::AnyModule> load_modbase_model(
+        const config::ModBaseModelConfig& config,
+        const at::TensorOptions& options,
+        [[maybe_unused]] const int batchsize) {
     at::InferenceMode guard;
 #if DORADO_CUDA_BUILD
     c10::optional<c10::Device> device;

@@ -5,7 +5,7 @@
 
 #include <spdlog/spdlog.h>
 #include <torch/csrc/autograd/InferenceMode.h>
-#include <torch/csrc/jit/serialization/pickle.h>
+#include <torch/serialize.h>
 
 #include <fstream>
 #include <stdexcept>
@@ -120,7 +120,7 @@ void load_state_dict(torch::nn::Module& model,
 
         const std::vector<char> bytes = load_file_bytes(weights_path);
         const c10::Dict<c10::IValue, c10::IValue> weights =
-                torch::jit::pickle_load(bytes).toGenericDict();
+                torch::pickle_load(bytes).toGenericDict();
         trace_loaded_tensors(weights);
 
         torch::OrderedDict<std::string, at::Tensor> params = model.named_parameters(true);
