@@ -83,10 +83,6 @@ void AuxiliaryData::create_auxiliary_data([[maybe_unused]] const c10::Device& de
         const std::int32_t chunk_sum =
                 std::accumulate(std::cbegin(chunk_sizes_), std::cend(chunk_sizes_), 0);
 
-        device_chunk_intervals =
-                at::from_blob(std::data(chunk_intervals_),
-                            {static_cast<std::int32_t>(std::size(chunk_intervals_))}, cpu_options).to(gpu_options);
-
         device_in_layout = at::empty({chunk_sum}, gpu_options);
         device_out_layout = at::empty({N_ * (T_lstm_ + 1)}, gpu_options);
         device_fwd_encoding = at::empty({N_ * T_lstm_}, gpu_options);
@@ -104,6 +100,10 @@ void AuxiliaryData::create_auxiliary_data([[maybe_unused]] const c10::Device& de
         if (status != KOI_SUCCESS) {
             throw std::runtime_error("RNN auxiliary data creation failed.");
         }
+
+        device_chunk_intervals =
+                at::from_blob(std::data(chunk_intervals_),
+                            {static_cast<std::int32_t>(std::size(chunk_intervals_))}, cpu_options).to(gpu_options);
 
         device_chunk_table = at::from_blob(std::data(chunk_table_),
                                     {static_cast<std::int32_t>(std::size(chunk_table_))},
