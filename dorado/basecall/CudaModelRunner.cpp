@@ -27,32 +27,16 @@ CudaModelRunner::CudaModelRunner(std::shared_ptr<CudaCaller> caller, size_t batc
 
 void CudaModelRunner::accept_chunk(int chunk_idx, const at::Tensor &chunk) {
     if (m_caller->variable_chunk_sizes()) {
+        // Tx VCS Input is of shape (C_in, N * T)
+        // LSTM VCS Input is of shape (1, C_in, N * T)
+        m_input.narrow(-1, m_chunk_offset, chunk.size(1)).copy_(chunk);
+        m_chunk_sizes.emplace_back(chunk.size(1));
+        m_chunk_offset += m_chunk_sizes.back();
         if (config().is_tx_model()) {
             // Initial padding is added in create_input_output_tensor in CudaCaller
-            // Tx VCS Input is of shape (C_in, N * T)
-            int chunk_offset_end = m_chunk_offset + chunk.size(1);
-            m_input.index_put_({
-                torch::indexing::Ellipsis,
-                torch::indexing::Slice(m_chunk_offset, chunk_offset_end)
-            }, chunk);
-
-            // Only care about size of raw_data here, not added padding
-            m_chunk_sizes.emplace_back(chunk.size(1));
-
-            m_input.index_put_({
-                torch::indexing::Ellipsis,
-                torch::indexing::Slice(chunk_offset_end, chunk_offset_end + m_first_conv_padding_int)
-            }, m_first_conv_padding_tensor);
-
-            m_chunk_offset += chunk.size(1) + m_first_conv_padding_int;
-        }
-        else {
-            // LSTM VCS Input is of shape (1, C_in, N * T)
-            m_input.index_put_({torch::indexing::Ellipsis,
-                                torch::indexing::Slice(m_chunk_offset, m_chunk_offset + chunk.size(1))},
-                            chunk);
-            m_chunk_sizes.emplace_back(chunk.size(1));
-            m_chunk_offset += m_chunk_sizes.back();
+            // No need to update m_chunk_sizes, that vector only cares about raw_data size
+            m_input.narrow(1, m_chunk_offset, m_first_conv_padding_int).copy_(m_first_conv_padding_tensor);
+            m_chunk_offset += m_first_conv_padding_int;
         }
     } else {
         m_input.index_put_({chunk_idx, torch::indexing::Ellipsis}, chunk);

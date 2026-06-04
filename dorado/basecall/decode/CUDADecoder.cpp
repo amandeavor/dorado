@@ -48,8 +48,8 @@ DecodeData CUDADecoder::beam_search_part_1(DecodeData data) const {
         chunks = at::empty({N_, 4}, tensor_options_int32);
         auto chunks_slice = chunks.slice(0, 0, N);
         auto chunk_table_slice = data.aux->device_chunk_table.slice(0, 0, N);
-        chunks_slice.slice(1, 0, 2) = chunk_table_slice;
-        chunks_slice.select(1, 2) = chunk_table_slice.select(1, 0);
+        chunks_slice.slice(1, 0, 2).copy_(chunk_table_slice);
+        chunks_slice.select(1, 2).copy_(chunk_table_slice.select(1, 0));
         chunks.index({at::indexing::Slice(0, N), 3}) = 0;
         chunk_results = at::empty({N_, 8}, tensor_options_int32);
     } else {
