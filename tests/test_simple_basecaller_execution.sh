@@ -12,13 +12,13 @@ fi
 
 test_dir=$(dirname $0)
 dorado_bin=$(cd "$(dirname $1)"; pwd -P)/$(basename $1)
-model_name_5k=${2:-dna_r10.4.1_e8.2_400bps_hac@v5.0.0}
+model_name_5k=${2:-dna_r10.4.1_e8.2_400bps_hac@v6.0.0}
 batch=${3:-384}
 model_name_5k_v43=${4:-dna_r10.4.1_e8.2_400bps_hac@v4.3.0}
-model_name_rna004=${5:-rna004_130bps_hac@v3.0.1}
+model_name_rna004=${5:-rna004_hac@v6.0.0}
 
 model_speed=${6:-"hac"}
-version=${7:-"v5.0.0"}
+version=${7:-"v6.0.0"}
 model_complex="${model_speed}@${version}"
 
 data_dir=${test_dir}/data
@@ -99,6 +99,9 @@ dorado_check_bam_not_empty
 $dorado_bin basecaller ${model_5k} $pod5_data/ ${models_directory_arg} -x cpu --modified-bases 5mCG_5hmCG -vv > $output_dir/calls.bam
 dorado_check_bam_not_empty
 
+# Test basecaller with "latest" version
+$dorado_bin basecaller $model_speed,5mCG_5hmCG $pod5_data/ ${models_directory_arg} -b ${batch} --emit-moves > $output_dir/calls.bam
+# Test basecaller with specific requested version
 $dorado_bin basecaller $model_complex,5mCG_5hmCG $pod5_data/ ${models_directory_arg} -b ${batch} --emit-moves > $output_dir/calls.bam
 
 # Check that the read group has the required model info in its header
@@ -225,7 +228,7 @@ dorado_emit_cram_iupac_reference
 title dorado basecaller mixed model complex and --modified-bases
 $dorado_bin basecaller $model_complex $pod5_data/ ${models_directory_arg} -b ${batch} --modified-bases 5mCG_5hmCG -vv > $output_dir/calls.bam
 if [[ -z "$SAMTOOLS_UNAVAILABLE" ]]; then
-    samtools view -h $output_dir/calls.bam | grep "ML:B:C,"
+    samtools view -h $output_dir/calls.bam | grep "ML:B:C"
     samtools view -h $output_dir/calls.bam | grep "MM:Z:C+h"
     samtools view -h $output_dir/calls.bam | grep "MN:i:"
 fi
@@ -585,6 +588,17 @@ if true; then
 
     title dorado in-line modbase duplex from model complex
     $dorado_bin duplex ${model_complex},5mC_5hmC $data_dir/duplex/pod5 ${models_directory_arg} --modified-bases-threshold 0.1 > $output_dir/duplex_calls_mods.bam
+    if [[ -z "$SAMTOOLS_UNAVAILABLE" ]]; then
+        samtools quickcheck -u $output_dir/duplex_calls_mods.bam
+        num_duplex_reads=$(samtools view $output_dir/duplex_calls_mods.bam | grep dx:i:1 | wc -l | awk '{print $1}')
+        if [[ $num_duplex_reads -ne "2" ]]; then
+            echo "Duplex basecalling missing reads - mods"
+            exit 1
+        fi
+    fi
+
+    title dorado in-line modbase duplex from model complex without version
+    $dorado_bin duplex ${model_speed},5mC_5hmC $data_dir/duplex/pod5 ${models_directory_arg} --modified-bases-threshold 0.1 > $output_dir/duplex_calls_mods.bam
     if [[ -z "$SAMTOOLS_UNAVAILABLE" ]]; then
         samtools quickcheck -u $output_dir/duplex_calls_mods.bam
         num_duplex_reads=$(samtools view $output_dir/duplex_calls_mods.bam | grep dx:i:1 | wc -l | awk '{print $1}')
