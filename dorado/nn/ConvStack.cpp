@@ -121,7 +121,7 @@ ConvStackImpl::ConvStackImpl(const std::vector<config::ConvParams> &layer_params
         layer.conv_layer_num = i;
         // Last layer has default next_layer_padding = 0, intentionally, input to tx encoder is not padded
         if (i > 0) {
-            layers[i-1].next_layer_padding = (layer.params.winlen / 2);
+            layers[i - 1].next_layer_padding = (layer.params.winlen / 2);
         }
 #endif  // DORADO_CUDA_BUILD
     }
@@ -375,8 +375,7 @@ void ConvStackImpl::ConvLayer::run_koi(WorkingMemory &wm, const AuxiliaryData *c
     }
 }
 
-at::Tensor ConvStackImpl::ConvLayer::run_koi_vcs_tx(at::Tensor &conv_input,
-                                                    AuxiliaryData *aux) {
+at::Tensor ConvStackImpl::ConvLayer::run_koi_vcs_tx(at::Tensor &conv_input, AuxiliaryData *aux) {
     // Implementation supposes chunk_table remains unchanged since entering ConvStack
     // Eg: S | L            S = Start, L = Length
     //     0 | 768
@@ -396,6 +395,7 @@ at::Tensor ConvStackImpl::ConvLayer::run_koi_vcs_tx(at::Tensor &conv_input,
     const int stride = params.stride;
     // The very first conv layer's shape is (C_in, N * T) The rest are (C_in / 8, N * T, 8)
     const int M_input = conv_input.size(1);
+    const bool use_f32_accum = utils::get_dev_opt<bool>("koi_tx_vcs_conv_f32_accum", true);
 
     if (!w_device.defined()) {
         // conv->weight is [C_out, C_in, W], we want [C_out, W, C_in] and then further tiling
@@ -404,12 +404,13 @@ at::Tensor ConvStackImpl::ConvLayer::run_koi_vcs_tx(at::Tensor &conv_input,
         // Special tiling for first Conv
         if (conv_layer_num == 0) {
             w_device = w_device.view({C_out / 2, 2, winlen * C_in}).transpose(1, 2).contiguous();
-        }
-        else {
+        } else {
             // Last layer needs to tile OUTSIZE, too big to fit in SMEM
             const int SMEM_N = (conv_layer_num == 4) ? 128 : C_out;
-            w_device = w_device.view({C_out / SMEM_N, SMEM_N / 16, 2, 8, (winlen * C_in) / 16, 2, 8})
-                               .permute({0, 4, 1, 2, 5, 3, 6}).contiguous();
+            w_device =
+                    w_device.view({C_out / SMEM_N, SMEM_N / 16, 2, 8, (winlen * C_in) / 16, 2, 8})
+                            .permute({0, 4, 1, 2, 5, 3, 6})
+                            .contiguous();
         }
         b_device = conv->bias.to(opts_f16);
     }
@@ -417,7 +418,7 @@ at::Tensor ConvStackImpl::ConvLayer::run_koi_vcs_tx(at::Tensor &conv_input,
     if (!conv_output.defined()) {
         // BasecallerNode.cpp adds varlen_chunks to batch so that varlen_chunks + max_padding_in_ConvLayers does not exceed batch_size * chunk_size
         // So it's safe to instantiate output tensors with M dimension = batch_size * chunk_size, even if actual input is less than that,
-        // the final excessive M rows won't get filled this layer, nor loaded next layer, they just never get touched. HOWEVER, they are still needed 
+        // the final excessive M rows won't get filled this layer, nor loaded next layer, they just never get touched. HOWEVER, they are still needed
         // so we have fixed M throughout layers and batches! This way, we just instantiate conv_output once per ConvLayer, and re-use it for all batches!
         // All of this so Torch doesn't reallocate output tensors with every batch, consuming all of GPU Mem.
         M_out = M_input;
@@ -435,47 +436,34 @@ at::Tensor ConvStackImpl::ConvLayer::run_koi_vcs_tx(at::Tensor &conv_input,
             // M dimension input is the biggest it can ever be given the benchmarks for the GPU it is running on.
             if (conv_layer_num != 4) {
                 M_out = (M_out / stride) + (aux->max_num_granularity() * next_layer_padding);
-            }
-            else {
+            } else {
                 M_out = aux->qkv_rope_lut.size(0) * 64;
             }
         }
-        conv_output = torch::empty({C_out / 8, M_out, 8}, opts_f16);    // Doesn't really need to be in Koi Layout, BUT, if you decide to change it,
-                                                                        // you must also change TxModules.cpp, as it gets C from THIS layout!
+        conv_output = torch::empty(
+                {C_out / 8, M_out, 8},
+                opts_f16);  // Doesn't really need to be in Koi Layout, BUT, if you decide to change it,
+                            // you must also change TxModules.cpp, as it gets C from THIS layout!
     }
 
     koi_vcs_sup_fill_conv_load_store_lut(
-        stream,
-        aux->total_num_varlen_chunks(),
-        aux->device_chunk_table.data_ptr<int>(),
-        aux->conv_load_lut.data_ptr<int>(),  // Load and Store LUTs make sense for them to be in AuxiliaryData.h, as their
-        aux->conv_store_lut.data_ptr<int>(), // shape depend on total_num_granularity, which changes between batches
-        conv_layer_num == 0 ? nullptr : conv_input.data_ptr(),
-        conv_layer_num == 0 ? 0 : M_out,
-        C_in,
-        aux->chunk_size_granularity(),  // This value gets updated according to ConvLayers stride in ConvStackImpl::run_koi_vcs_tx
-        stride,
-        padding,
-        next_layer_padding
-    );
+            stream, aux->total_num_varlen_chunks(), aux->device_chunk_table.data_ptr<int>(),
+            aux->conv_load_lut.data_ptr<
+                    int>(),  // Load and Store LUTs make sense for them to be in AuxiliaryData.h, as their
+            aux->conv_store_lut.data_ptr<
+                    int>(),  // shape depend on total_num_granularity, which changes between batches
+            conv_layer_num == 0 ? nullptr : conv_input.data_ptr(), conv_layer_num == 0 ? 0 : M_out,
+            C_in,
+            aux->chunk_size_granularity(),  // This value gets updated according to ConvLayers stride in ConvStackImpl::run_koi_vcs_tx
+            stride, padding, next_layer_padding);
 
-    koi_vcs_sup_cnn(
-        stream,
-        conv_layer_num,
-        conv_input.data_ptr(),
-        w_device.data_ptr(),
-        conv_output.data_ptr(),
-        b_device.data_ptr(),
-        aux->conv_load_lut.data_ptr<int>(),
-        aux->conv_store_lut.data_ptr<int>(),
-        aux->total_num_granularity(),
-        M_input,    // M of input does not matter for first cnn layer
-        M_out,      // M of output required always
-        winlen,
-        C_in,
-        C_out,
-        padding,
-        stride
+    koi_vcs_sup_cnn(stream, conv_layer_num, conv_input.data_ptr(), w_device.data_ptr(),
+                    conv_output.data_ptr(), b_device.data_ptr(), aux->conv_load_lut.data_ptr<int>(),
+                    aux->conv_store_lut.data_ptr<int>(), aux->total_num_granularity(),
+                    M_input,  // M of input does not matter for first cnn layer
+                    M_out,    // M of output required always
+                    winlen, C_in, C_out, padding, stride,
+                    use_f32_accum  // First convolution is always in fp16
     );
 
     return conv_output;

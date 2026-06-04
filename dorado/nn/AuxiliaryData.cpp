@@ -49,7 +49,8 @@ AuxiliaryData::AuxiliaryData(at::Tensor workspace,
         chunk_table_[(2 * i) + 0] = total_num_granularity_;
         chunk_table_[(2 * i) + 1] = cs_blocks;
         chunk_intervals_[(2 * i) + 0] = total_num_granularity_ * chunk_size_granularity_;
-        chunk_intervals_[(2 * i) + 1] = (total_num_granularity_ + cs_blocks) * chunk_size_granularity_;
+        chunk_intervals_[(2 * i) + 1] =
+                (total_num_granularity_ + cs_blocks) * chunk_size_granularity_;
         total_num_granularity_ += cs_blocks;
         ++i;
         cs /= stride;
@@ -93,11 +94,12 @@ void AuxiliaryData::create_auxiliary_data([[maybe_unused]] const c10::Device& de
         constexpr std::int32_t SUBBATCH_SIZE{32};
 
         const int status = host_lstm_preprocess(
-                stream.stream(), N_, std::data(chunk_sizes_), std::size(chunk_sizes_), SUBBATCH_SIZE,
-                T_lstm_, workspace_.data_ptr<std::int32_t>(), workspace_.size(0), thread_pool.get(),
-                nullptr, device_out_layout.data_ptr<std::int32_t>(),
-                device_fwd_encoding.data_ptr<std::int32_t>(), device_in_layout.data_ptr<std::int32_t>(),
-                nullptr, device_bwd_encoding.data_ptr<std::int32_t>());
+                stream.stream(), N_, std::data(chunk_sizes_), std::size(chunk_sizes_),
+                SUBBATCH_SIZE, T_lstm_, workspace_.data_ptr<std::int32_t>(), workspace_.size(0),
+                thread_pool.get(), nullptr, device_out_layout.data_ptr<std::int32_t>(),
+                device_fwd_encoding.data_ptr<std::int32_t>(),
+                device_in_layout.data_ptr<std::int32_t>(), nullptr,
+                device_bwd_encoding.data_ptr<std::int32_t>());
 
         if (status != KOI_SUCCESS) {
             throw std::runtime_error("RNN auxiliary data creation failed.");
@@ -105,15 +107,20 @@ void AuxiliaryData::create_auxiliary_data([[maybe_unused]] const c10::Device& de
 
         device_chunk_intervals =
                 at::from_blob(std::data(chunk_intervals_),
-                            {static_cast<std::int32_t>(std::size(chunk_intervals_))}, cpu_options).to(gpu_options);
+                              {static_cast<std::int32_t>(std::size(chunk_intervals_))}, cpu_options)
+                        .to(gpu_options);
 
-        device_chunk_table = at::from_blob(std::data(chunk_table_),
-                                    {static_cast<std::int32_t>(std::size(chunk_table_))},
-                                    cpu_options).to(gpu_options);
-    }
-    else {
+        device_chunk_table =
+                at::from_blob(std::data(chunk_table_),
+                              {static_cast<std::int32_t>(std::size(chunk_table_))}, cpu_options)
+                        .to(gpu_options);
+    } else {
         if (conv_load_lut.defined() || conv_store_lut.defined() || qkv_rope_lut.defined()) {
-            throw std::runtime_error("We are trying to re-instantiate Tx VCS LUTs, this shouldn't happen! total_num_granularity depends on current_batch from BasecallerNode.cpp, and we should instantiate new AuxiliaryData with every basecall_current_batch, and subsequent call_chunks.");
+            throw std::runtime_error(
+                    "We are trying to re-instantiate Tx VCS LUTs, this shouldn't happen! "
+                    "total_num_granularity depends on current_batch from BasecallerNode.cpp, and "
+                    "we should instantiate new AuxiliaryData with every basecall_current_batch, "
+                    "and subsequent call_chunks.");
             return;
         }
 
@@ -133,10 +140,12 @@ void AuxiliaryData::create_auxiliary_data([[maybe_unused]] const c10::Device& de
         // Those blocks are irrelevant for basecalling, just don't make basecalling crash
         // So with lut being zeros, these padded blocks will calculate sincos as if they were T = 0
 
-        device_chunk_table = at::from_blob(std::data(chunk_table_),
-                                    {static_cast<std::int32_t>(std::size(chunk_table_))},
-                                    cpu_options).mul_(chunk_size_granularity_)
-                                    .view({total_num_varlen_chunks_, 2}).to(gpu_options);
+        device_chunk_table =
+                at::from_blob(std::data(chunk_table_),
+                              {static_cast<std::int32_t>(std::size(chunk_table_))}, cpu_options)
+                        .mul_(chunk_size_granularity_)
+                        .view({total_num_varlen_chunks_, 2})
+                        .to(gpu_options);
     }
 #else
     throw std::runtime_error("AuxiliaryData error: unsupported code path!");

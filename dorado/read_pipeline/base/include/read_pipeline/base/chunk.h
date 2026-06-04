@@ -22,10 +22,11 @@ std::vector<std::pair<std::size_t, std::size_t>> generate_variable_chunks(std::s
                                                                           std::size_t stride,
                                                                           std::size_t overlap);
 
-std::vector<std::pair<std::size_t, std::size_t>> generate_variable_chunks_tx(const std::size_t num_samples,
-                                                                             const std::size_t max_chunk_size,
-                                                                             const std::size_t stride,
-                                                                             const std::size_t chunk_size_granularity,
-                                                                             const std::size_t overlap);
+std::vector<std::pair<std::size_t, std::size_t>> generate_variable_chunks_tx(
+        const std::size_t num_samples,
+        const std::size_t max_chunk_size,
+        const std::size_t stride,
+        const std::size_t chunk_size_granularity,
+        const std::size_t overlap);
 
 }  // namespace dorado::utils

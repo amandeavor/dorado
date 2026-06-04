@@ -24,8 +24,7 @@ at::Tensor TxModelImpl::forward(const at::Tensor &input, nn::AuxiliaryData *aux)
 #if DORADO_CUDA_BUILD
         if (aux && aux->device_chunk_table.defined()) {
             h = convs->run_koi_vcs_tx(input, aux);
-        }
-        else
+        } else
 #endif
         {
             // Returns: NTC layout

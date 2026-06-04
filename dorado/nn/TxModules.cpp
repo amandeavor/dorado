@@ -419,7 +419,8 @@ void TxEncoderImpl::remove_bits() {
 }
 #endif
 
-void TxEncoderImpl::koi_forward(utils::ScaledTensor &scaled_tensor, at::Tensor &x_f16,
+void TxEncoderImpl::koi_forward(utils::ScaledTensor &scaled_tensor,
+                                at::Tensor &x_f16,
                                 [[maybe_unused]] AuxiliaryData *const aux) {
     (void)scaled_tensor;
     (void)x_f16;
@@ -552,8 +553,9 @@ void TxEncoderImpl::koi_forward(utils::ScaledTensor &scaled_tensor, at::Tensor &
     KoiTensorExt fc1_out_mk(t_fc1_out, {'M', 'K', 'm', 'k'});
     KoiTensorExt fc2_out_mn(t_fc2_out.flatten(0, 1), {'M', 'N', 'm', 'n'});
     KoiTensorExt fc2_out_ntc(t_fc2_out, {'N', 'T', 'C', 't', 'c'});
-    
-    KoiTensorExt sincos(sincos_bfr.slice(0, 0, (aux ? aux->max_chunk_size_tx_enc() : T) / 16), {'T', 'D', 't', 'd'});
+
+    KoiTensorExt sincos(sincos_bfr.slice(0, 0, (aux ? aux->max_chunk_size_tx_enc() : T) / 16),
+                        {'T', 'D', 't', 'd'});
     KoiTensorExt proj_w(proj_weight, {'N', 'K', 'n', 'k'});
     KoiTensorExt proj_b(proj_bias, {'N'});
 
@@ -570,9 +572,9 @@ void TxEncoderImpl::koi_forward(utils::ScaledTensor &scaled_tensor, at::Tensor &
         // Apply masked attention
         utils::ScopedProfileRange spr("MEA", 3);
         if (aux) {
-            res = koi_vcs_attn(stream, qkv.data_ptr(), aux->device_chunk_table.data_ptr<int>(), aux->total_num_varlen_chunks(), t_out_attn.data_ptr());
-        }
-        else {
+            res = koi_vcs_attn(stream, qkv.data_ptr(), aux->device_chunk_table.data_ptr<int>(),
+                               aux->total_num_varlen_chunks(), t_out_attn.data_ptr());
+        } else {
             res = koi_masked_attention(stream, win_upper, win_lower, &out_qkv, &out_attn);
         }
     }
@@ -848,26 +850,24 @@ at::Tensor TxEncoderStackImpl::forward(const at::Tensor &x, [[maybe_unused]] Aux
             // N = total amount of chunk_size_granularity within batch
             // T = chunk_size_granularity which is min_chunksize / ConvStack_stride
             N = aux->total_num_granularity();
-            T = aux->chunk_size_granularity();      // This value gets updated according to ConvLayers stride in ConvStackImpl::run_koi_vcs_tx
-            C = static_cast<int>(x.size(0) * 8);    // Underlying input layout is (C / 8, M_in, 8)
+            T = aux->chunk_size_granularity();  // This value gets updated according to ConvLayers stride in ConvStackImpl::run_koi_vcs_tx
+            C = static_cast<int>(x.size(0) * 8);  // Underlying input layout is (C / 8, M_in, 8)
 
             // Why do this? Koi's linear.cu MatMulOp implementation requires M to be a multiple of 256
             N += ((N % 4) == 0) ? 0 : (4 - (N % 4));
             if (N > aux->max_num_granularity()) {
-                spdlog::error("Tx Encoder total_num_granularity is exceeding max_num_granularity\ntotal_num_granularity = {}, max_num_granularity = {}", aux->total_num_granularity(), aux->max_num_granularity());
+                spdlog::error(
+                        "Tx Encoder total_num_granularity is exceeding "
+                        "max_num_granularity\ntotal_num_granularity = {}, max_num_granularity = {}",
+                        aux->total_num_granularity(), aux->max_num_granularity());
             }
             assert(T == 64);
 
             auto stream = at::cuda::getCurrentCUDAStream().stream();
-            koi_vcs_sup_fill_qkv_rope_lut(
-                stream,
-                aux->total_num_varlen_chunks(),
-                T,
-                aux->device_chunk_table.data_ptr<int>(),
-                aux->qkv_rope_lut.data_ptr<int>()
-            );
-        }
-        else {
+            koi_vcs_sup_fill_qkv_rope_lut(stream, aux->total_num_varlen_chunks(), T,
+                                          aux->device_chunk_table.data_ptr<int>(),
+                                          aux->qkv_rope_lut.data_ptr<int>());
+        } else {
             N = static_cast<int>(x.size(0));
             T = static_cast<int>(x.size(1));
             C = static_cast<int>(x.size(2));
@@ -878,9 +878,11 @@ at::Tensor TxEncoderStackImpl::forward(const at::Tensor &x, [[maybe_unused]] Aux
             utils::ScopedProfileRange spr("Tile F16", 2);
             if (use_vcs && aux) {
                 // Underlying input layout is (C / 8, M_in, 8)
-                tiled_f16 = x.narrow(1, 0, N * T).view({C / 8, N, T / 16, 16, 8}).permute({1, 2, 0, 3, 4}).contiguous();
-            }
-            else {
+                tiled_f16 = x.narrow(1, 0, N * T)
+                                    .view({C / 8, N, T / 16, 16, 8})
+                                    .permute({1, 2, 0, 3, 4})
+                                    .contiguous();
+            } else {
                 tiled_f16 = x.view({N, T / 16, 16, C / 8, 8}).transpose(2, 3).contiguous();
             }
         }
@@ -890,9 +892,13 @@ at::Tensor TxEncoderStackImpl::forward(const at::Tensor &x, [[maybe_unused]] Aux
             utils::ScopedProfileRange spr("Quantise/tile I8", 2);
             // Quanitze tensor to i8 and take the reciprocal of the scale.
             if (aux) {
-                scaled_tensor = utils::quantize_tensor(x.narrow(1, 0, N * T).view({C / 8, N * T, 8}).transpose(0, 1).contiguous().view({N * T, C}), 1);
-            }
-            else {
+                scaled_tensor = utils::quantize_tensor(x.narrow(1, 0, N * T)
+                                                               .view({C / 8, N * T, 8})
+                                                               .transpose(0, 1)
+                                                               .contiguous()
+                                                               .view({N * T, C}),
+                                                       1);
+            } else {
                 scaled_tensor = utils::quantize_tensor(x, 2);
             }
             scaled_tensor.scale.reciprocal_();

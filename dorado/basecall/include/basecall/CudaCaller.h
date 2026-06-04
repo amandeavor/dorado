@@ -72,8 +72,9 @@ private:
             float memory_limit_fraction,
             const config::BasecallModelConfig &model_config,
             std::optional<PipelineType> pipeline_type,
-            int requested_batch_size);
-    void determine_batch_dims(const BasecallerCreationParams &params);
+            int requested_batch_size,
+            bool variable_chunk_sizes);
+    void determine_batch_dims(const BasecallerCreationParams &params, bool variable_chunk_sizes);
 
     void start_threads();
     void cuda_thread_fn();

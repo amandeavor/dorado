@@ -70,8 +70,7 @@ std::unique_ptr<nn::AuxiliaryData> create_empty_input(at::Tensor &in,
                 at::TensorOptions().device(torch::kCPU).pinned_memory(true).dtype(torch::kInt32);
         // for workspace size see koi/utils_lstm.h
         workspace = torch::empty({6 * ((T / stride) + 3) * N}, workspace_options);
-    }
-    else {
+    } else {
         // This is absolute worse-case scenario, where all reads are <= chunk_size_granularity
         assert((T % chunk_size_granularity) == 0);
         in = torch::empty({C, (N * T) + (N * (T / chunk_size_granularity) * 4)}, in_options);
@@ -149,7 +148,7 @@ CudaCaller::CudaCaller(const BasecallerCreationParams &params)
     at::InferenceMode guard;
     m_module = load_crf_model(params.model_config, m_options);
 
-    determine_batch_dims(params);
+    determine_batch_dims(params, m_variable_chunk_sizes);
 
     auto [crfmodel_bytes_per_ct, decode_bytes_per_ct] = calculate_memory_requirements(m_config);
 
@@ -166,10 +165,10 @@ CudaCaller::CudaCaller(const BasecallerCreationParams &params)
         at::Tensor workspace;
         std::unique_ptr<nn::AuxiliaryData> aux;
         if (m_variable_chunk_sizes) {
-            aux = create_empty_input(input, m_options, workspace, batch_dim.N, batch_dim.T_in,
-                                     m_num_input_features, m_config.stride,
-                                     m_config.chunk_size_granularity(), m_config.basecaller.chunk_size(), 
-                                     m_config.is_lstm_model(), m_thread_pool);
+            aux = create_empty_input(
+                    input, m_options, workspace, batch_dim.N, batch_dim.T_in, m_num_input_features,
+                    m_config.stride, m_config.chunk_size_granularity(),
+                    m_config.basecaller.chunk_size(), m_config.is_lstm_model(), m_thread_pool);
         } else {
             input = torch::empty({batch_dim.N, m_num_input_features, batch_dim.T_in}, m_options);
         }
@@ -327,8 +326,7 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> CudaCaller::create_input_output_t
             // Tx AuxiliaryData worse-case scenario is if all chunks are of chunk_size_granularity
             // 2 for chunk_table, 3 for luts, all being int32
             aux_size = 5 * (N * (T_in / m_config.chunk_size_granularity()));
-        }
-        else {
+        } else {
             input = storage.slice(0, 0, input_bytes).view(scalar_type).view({1, C_in, N * T_in});
             // for workspace size see koi/utils_lstm.h
             aux_size = 6 * (T_out + 3) * N;
@@ -354,9 +352,11 @@ int CudaCaller::get_max_safe_batch_size(c10::Device device,
                                         const config::BasecallModelConfig &model_config) {
     const int requested_batch_size = 0;       // Determine limit for us.
     const auto pipeline_type = std::nullopt;  // Don't add extra chunk sizes.
-    auto max_batch_sizes = calculate_batch_sizes(device, memory_limit_fraction, model_config,
-                                                 pipeline_type, requested_batch_size)
-                                   .max_batch_sizes;
+    const bool variable_chunk_sizes = false;  // Doesn't matter when determining max_safe_batch_size
+    auto max_batch_sizes =
+            calculate_batch_sizes(device, memory_limit_fraction, model_config, pipeline_type,
+                                  requested_batch_size, variable_chunk_sizes)
+                    .max_batch_sizes;
     // We should only have the one result since we didn't request the extra chunk sizes.
     if (max_batch_sizes.size() != 1) {
         throw std::logic_error(fmt::format("Unexpected count of sizes for {}", device.str()));
@@ -418,7 +418,8 @@ CudaCaller::BatchDimsAndMaxSizes CudaCaller::calculate_batch_sizes(
         float memory_limit_fraction,
         const config::BasecallModelConfig &model_config,
         std::optional<PipelineType> pipeline_type,
-        int requested_batch_size) {
+        int requested_batch_size,
+        bool variable_chunk_sizes) {
     c10::cuda::CUDAGuard device_guard(device);
     c10::cuda::CUDACachingAllocator::emptyCache();
     const int batch_granularity = get_batch_size_granularity(model_config);
@@ -444,8 +445,7 @@ CudaCaller::BatchDimsAndMaxSizes CudaCaller::calculate_batch_sizes(
     // the same queue and complete as fast as possible.
 
     // ? Creation of shorter chunk size queue should be skipped for VCS Tx right ?
-    if (pipeline_type == PipelineType::simplex &&
-        !(model_config.is_tx_model() && chunk_granularity == 768)) {
+    if (pipeline_type == PipelineType::simplex && !variable_chunk_sizes) {
         const char *env_extra_chunk_sizes = std::getenv("DORADO_EXTRA_CHUNK_SIZES");
         if (env_extra_chunk_sizes != nullptr) {
             constexpr char SEPARATOR = ';';
@@ -520,11 +520,12 @@ CudaCaller::BatchDimsAndMaxSizes CudaCaller::calculate_batch_sizes(
     return result;
 }
 
-void CudaCaller::determine_batch_dims(const BasecallerCreationParams &params) {
+void CudaCaller::determine_batch_dims(const BasecallerCreationParams &params,
+                                      bool variable_chunk_sizes) {
     const int requested_batch_size = m_config.basecaller.batch_size();
     auto [batch_dims, max_batch_sizes] =
             calculate_batch_sizes(m_options.device(), params.memory_limit_fraction, m_config,
-                                  m_pipeline_type, requested_batch_size);
+                                  m_pipeline_type, requested_batch_size, variable_chunk_sizes);
     m_batch_dims = std::move(batch_dims);
 
     if (requested_batch_size != 0 || max_batch_sizes.empty()) {
@@ -588,8 +589,8 @@ void CudaCaller::determine_batch_dims(const BasecallerCreationParams &params) {
             if (m_variable_chunk_sizes) {
                 aux = create_empty_input(input, m_options, workspace, batch_size, chunk_size,
                                          m_config.num_features, stride, chunk_granularity,
-                                         m_config.basecaller.chunk_size(),
-                                         m_config.is_lstm_model(), m_thread_pool);
+                                         m_config.basecaller.chunk_size(), m_config.is_lstm_model(),
+                                         m_thread_pool);
             } else {
                 input = torch::empty({batch_size, m_config.num_features, chunk_size}, m_options);
             }

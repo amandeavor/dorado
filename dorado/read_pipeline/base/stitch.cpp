@@ -10,7 +10,6 @@
 namespace dorado::utils {
 
 void stitch_chunks(ReadCommon& read_common, std::span<const Chunk*> called_chunks) {
-
     int start_pos = 0;
     int mid_point_front = 0;
     std::vector<uint8_t> moves;

@@ -18,10 +18,10 @@ CudaModelRunner::CudaModelRunner(std::shared_ptr<CudaCaller> caller, size_t batc
           m_first_conv_padding_int(m_caller->config().convs.front().winlen / 2) {
     std::tie(m_input, m_output, m_aux) = m_caller->create_input_output_tensor(batch_dims_idx);
     if (config().is_tx_model()) {
-        m_first_conv_padding_tensor = torch::zeros({
-            config().num_features,                      // m_config.convs.front().insize as per BasecallModelConfig.cpp
-            m_first_conv_padding_int            
-        }, at::TensorOptions().device(torch::kCPU));    // Batch is "constructed" on CPU
+        m_first_conv_padding_tensor = torch::zeros(
+                {config().num_features,  // m_config.convs.front().insize as per BasecallModelConfig.cpp
+                 m_first_conv_padding_int},
+                at::TensorOptions().device(torch::kCPU));  // Batch is "constructed" on CPU
     }
 }
 
@@ -35,7 +35,8 @@ void CudaModelRunner::accept_chunk(int chunk_idx, const at::Tensor &chunk) {
         if (config().is_tx_model()) {
             // Initial padding is added in create_input_output_tensor in CudaCaller
             // No need to update m_chunk_sizes, that vector only cares about raw_data size
-            m_input.narrow(1, m_chunk_offset, m_first_conv_padding_int).copy_(m_first_conv_padding_tensor);
+            m_input.narrow(1, m_chunk_offset, m_first_conv_padding_int)
+                    .copy_(m_first_conv_padding_tensor);
             m_chunk_offset += m_first_conv_padding_int;
         }
     } else {
@@ -49,11 +50,11 @@ std::vector<decode::DecodedChunk> CudaModelRunner::call_chunks(int num_chunks) {
     c10::cuda::CUDAStreamGuard guard(m_stream);
     std::unique_ptr<nn::AuxiliaryData> aux;
     if (m_caller->variable_chunk_sizes()) {
-        aux = std::make_unique<nn::AuxiliaryData>(m_aux, batch_size(), chunk_size(),
-                                                  config().stride,
-                                                  config().chunk_size_granularity(), m_chunk_sizes,
-                                                  config().basecaller.chunk_size(),
-                                                  (config().is_lstm_model() || config().is_flstm_model())); // !config().is_tx_model() would do the same here
+        aux = std::make_unique<nn::AuxiliaryData>(
+                m_aux, batch_size(), chunk_size(), config().stride,
+                config().chunk_size_granularity(), m_chunk_sizes, config().basecaller.chunk_size(),
+                (config().is_lstm_model() ||
+                 config().is_flstm_model()));  // !config().is_tx_model() would do the same here
     }
     auto decoded_chunks = m_caller->call_chunks(m_input, m_output, num_chunks, aux.get());
     if (m_caller->variable_chunk_sizes()) {

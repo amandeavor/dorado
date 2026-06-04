@@ -39,8 +39,7 @@ DecodeData CUDADecoder::beam_search_part_1(DecodeData data) const {
         std::int32_t N_;
         if (data.aux->is_lstm_model()) {
             N_ = std::max<std::int32_t>(N, data.aux->N() * 4);
-        }
-        else {
+        } else {
             // N IS TOTAL_NUM_VARLEN_CHUNKS
             N_ = N;
             data.aux->device_chunk_table.floor_divide_(6);
@@ -66,7 +65,8 @@ DecodeData CUDADecoder::beam_search_part_1(DecodeData data) const {
     at::Tensor aux;
     at::Tensor path;
     at::Tensor moves_sequence_qstring;
-    if (data.aux && (data.aux->device_in_layout.defined() || data.aux->device_chunk_table.defined())) {
+    if (data.aux &&
+        (data.aux->device_in_layout.defined() || data.aux->device_chunk_table.defined())) {
         if (data.aux->is_lstm_model()) {
             // lstm VCS
             const std::int32_t T_ = data.aux->NT_out_max();
@@ -74,12 +74,14 @@ DecodeData CUDADecoder::beam_search_part_1(DecodeData data) const {
             aux = at::empty(Ts_ * (C + 4 * options.beam_width), tensor_options_int8);
             path = at::zeros(Ts_, tensor_options_int32);
             moves_sequence_qstring = at::zeros({3, T_}, tensor_options_int8);
-        }
-        else {
+        } else {
             // Tx VCS
-            aux = at::empty(data.aux->total_num_granularity() * (T + 1) * (C + 4 * options.beam_width), tensor_options_int8);
+            aux = at::empty(
+                    data.aux->total_num_granularity() * (T + 1) * (C + 4 * options.beam_width),
+                    tensor_options_int8);
             path = at::zeros(data.aux->total_num_granularity() * (T + 1), tensor_options_int32);
-            moves_sequence_qstring = at::zeros({3, data.aux->total_num_granularity() * T}, tensor_options_int8);
+            moves_sequence_qstring =
+                    at::zeros({3, data.aux->total_num_granularity() * T}, tensor_options_int8);
         }
     } else {
         aux = at::empty(N * (T + 1) * (C + 4 * options.beam_width), tensor_options_int8);

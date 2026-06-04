@@ -1,9 +1,9 @@
 #pragma once
 
+#include "AuxiliaryData.h"
 #include "config/BasecallModelConfig.h"
 #include "nn/RMSNorm.h"
 #include "torch_utils/tensor_utils.h"
-#include "AuxiliaryData.h"
 
 #include <c10/core/Device.h>
 #include <c10/core/TensorOptions.h>

@@ -44,20 +44,24 @@ public:
         chunk_size_granularity_ /= stride;
     }
 
-    void create_auxiliary_data(const c10::Device& device, KoiThreads& thread_pool, bool is_lstm_model);
+    void create_auxiliary_data(const c10::Device& device,
+                               KoiThreads& thread_pool,
+                               bool is_lstm_model);
 
     at::Tensor device_in_layout;
     at::Tensor device_out_layout;
     at::Tensor device_fwd_encoding;
     at::Tensor device_bwd_encoding;
 
-    std::span<const std::int32_t> chunk_sizes() const {  return chunk_sizes_; }
+    std::span<const std::int32_t> chunk_sizes() const { return chunk_sizes_; }
 
     at::Tensor device_chunk_intervals;
-    at::Tensor device_chunk_table;  // Torch Tensor of shape (total_num_varlen_chunks, 2). Column 0 is chunk_start. Column 1 is chunk_length
-    at::Tensor conv_load_lut;       // Torch Tensor of shape total_num_granularity_
-    at::Tensor conv_store_lut;      // Torch Tensor of shape total_num_granularity_
-    at::Tensor qkv_rope_lut;        // Torch tensor of shape total_num_granularity_, padded to be multiple of 4, explained in .cpp
+    at::Tensor
+            device_chunk_table;  // Torch Tensor of shape (total_num_varlen_chunks, 2). Column 0 is chunk_start. Column 1 is chunk_length
+    at::Tensor conv_load_lut;    // Torch Tensor of shape total_num_granularity_
+    at::Tensor conv_store_lut;   // Torch Tensor of shape total_num_granularity_
+    at::Tensor
+            qkv_rope_lut;  // Torch tensor of shape total_num_granularity_, padded to be multiple of 4, explained in .cpp
 
 private:
     at::Tensor workspace_;
@@ -73,8 +77,9 @@ private:
     std::int32_t chunk_size_granularity_;   // chunk_size_granularity() from BasecallModelConfig.h
     std::int32_t total_num_granularity_;    // Input length divided by chunk_size_granularity
     std::int32_t total_num_varlen_chunks_;  // Amount of varlen chunks in batch
-    std::int32_t max_num_granularity_;      // Given CudaCaller's batch_size and chunk_size, max amount of granularity chunks
-    std::int32_t max_chunk_size_;           // Acquired from model's config "[basecaller] chunksize"
+    std::int32_t
+            max_num_granularity_;  // Given CudaCaller's batch_size and chunk_size, max amount of granularity chunks
+    std::int32_t max_chunk_size_;  // Acquired from model's config "[basecaller] chunksize"
 
     bool is_lstm_model_;
 };

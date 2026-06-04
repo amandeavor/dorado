@@ -130,9 +130,11 @@ void BasecallerNode::input_thread_fn() {
 
         if (m_variable_chunk_sizes) {
             const std::vector<std::pair<std::size_t, std::size_t>> intervals =
-            m_is_tx_model ? utils::generate_variable_chunks_tx(raw_size, chunk_size, m_model_stride, m_chunk_size_granularity, m_overlap)
-                          : utils::generate_variable_chunks(raw_size, chunk_size, m_model_stride,
-                                            m_overlap);
+                    m_is_tx_model ? utils::generate_variable_chunks_tx(
+                                            raw_size, chunk_size, m_model_stride,
+                                            m_chunk_size_granularity, m_overlap)
+                                  : utils::generate_variable_chunks(raw_size, chunk_size,
+                                                                    m_model_stride, m_overlap);
             read_chunks.reserve(std::size(intervals));
             for (std::size_t i = 0; i < std::size(intervals); ++i) {
                 read_chunks.emplace_back(std::make_unique<BasecallingChunk>(
@@ -362,7 +364,8 @@ void BasecallerNode::basecall_worker_thread(int worker_id) {
         const bool is_full_batch = current_batch.chunks.size() == batch_size;
         const bool is_full_chunks_size = current_batch.chunks_size == max_worker_chunks_size;
         const bool is_full_batch_tx_vcs = current_batch.chunks_size > batch_size * chunk_size;
-        if (m_variable_chunk_sizes ? (m_is_tx_model ? is_full_batch_tx_vcs : is_full_chunks_size) : is_full_batch) {
+        if (m_variable_chunk_sizes ? (m_is_tx_model ? is_full_batch_tx_vcs : is_full_chunks_size)
+                                   : is_full_batch) {
             throw std::logic_error("Current batch is already full");
         }
 
@@ -433,17 +436,19 @@ void BasecallerNode::basecall_worker_thread(int worker_id) {
             if (m_variable_chunk_sizes) {
                 size_t min_working_unit = m_is_tx_model ? m_chunk_size_granularity : stride;
                 size_t overhang = input_slice.size(1) % min_working_unit;
-                while (overhang != 0) {  // needed for input_slice.size(1) < (min_working_unit - overhang)
-                    input_slice =
-                            at::concat({input_slice,
-                                        input_slice.index({Ellipsis, Slice(0, min_working_unit - overhang)})},
-                                    1);
+                while (overhang !=
+                       0) {  // needed for input_slice.size(1) < (min_working_unit - overhang)
+                    input_slice = at::concat(
+                            {input_slice,
+                             input_slice.index({Ellipsis, Slice(0, min_working_unit - overhang)})},
+                            1);
                     overhang = input_slice.size(1) % min_working_unit;
                 }
 
                 if (m_is_tx_model) {
                     const size_t slice_size = input_slice.size(1);
-                    if ((current_batch.chunks_size + slice_size + max_conv_padding) > (batch_size * chunk_size)) {
+                    if ((current_batch.chunks_size + slice_size + max_conv_padding) >
+                        (batch_size * chunk_size)) {
                         basecall_current_batch(current_batch);
                         // Add initial padding to chunks_size before filling up new batch
                         current_batch.chunks_size = max_conv_padding;
