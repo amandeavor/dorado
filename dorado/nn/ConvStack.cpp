@@ -453,44 +453,30 @@ at::Tensor ConvStackImpl::ConvLayer::run_koi_vcs_tx(at::Tensor &conv_input,
         conv_layer_num == 0 ? nullptr : conv_input.data_ptr(),
         conv_layer_num == 0 ? 0 : M_out,
         C_in,
-        aux->chunk_size_granularity(),    // This value gets updated according to ConvLayers stride in ConvStackImpl::run_koi_vcs_tx
+        aux->chunk_size_granularity(),  // This value gets updated according to ConvLayers stride in ConvStackImpl::run_koi_vcs_tx
         stride,
         padding,
         next_layer_padding
     );
 
-    if (conv_layer_num == 0) {
-        koi_vcs_sup_cnn1(
-            stream,
-            conv_input.data_ptr(),
-            w_device.data_ptr(),
-            conv_output.data_ptr(),
-            b_device.data_ptr(),
-            aux->conv_load_lut.data_ptr<int>(),
-            aux->conv_store_lut.data_ptr<int>(),
-            aux->total_num_granularity(),
-            M_out   // M dimension of output tensor
-        );
-    }
-    else {
-        koi_vcs_sup_cnn(
-            stream,
-            conv_input.data_ptr(),
-            w_device.data_ptr(),
-            conv_output.data_ptr(),
-            b_device.data_ptr(),
-            aux->conv_load_lut.data_ptr<int>(),
-            aux->conv_store_lut.data_ptr<int>(),
-            aux->total_num_granularity(),
-            M_input,
-            M_out,
-            winlen,
-            C_in,
-            C_out,
-            padding,
-            stride
-        );
-    }
+    koi_vcs_sup_cnn(
+        stream,
+        conv_layer_num,
+        conv_input.data_ptr(),
+        w_device.data_ptr(),
+        conv_output.data_ptr(),
+        b_device.data_ptr(),
+        aux->conv_load_lut.data_ptr<int>(),
+        aux->conv_store_lut.data_ptr<int>(),
+        aux->total_num_granularity(),
+        M_input,    // M of input does not matter for first cnn layer
+        M_out,      // M of output required always
+        winlen,
+        C_in,
+        C_out,
+        padding,
+        stride
+    );
 
     return conv_output;
 }
