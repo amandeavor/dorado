@@ -63,7 +63,6 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
-#include <thread>
 #include <vector>
 
 // HACK: DynamicProgress uses magic to move around in the terminal but assumes
@@ -574,7 +573,7 @@ struct PipelineWorkers {
     explicit PipelineWorkers(const utils::ThreadAllocations& thread_allocations)
             : aligner_executor(thread_allocations.aligner_threads),
               barcode_pool(thread_allocations.barcoder_threads),
-              polya_pool(std::thread::hardware_concurrency()) {}
+              polya_pool(thread_allocations.polya_threads) {}
 
     SimpleExecutor<AlignerNode> aligner_executor;
     SimpleExecutor<BarcodeClassifierNode> barcode_pool;
@@ -959,7 +958,8 @@ void run(const BasecallerOptions& options,
             (adapter_info && (adapter_info->trim_adapters || adapter_info->trim_primers));
     const auto thread_allocations = utils::default_thread_allocations(
             int(num_devices), !modbase_runners.empty() ? int(modbase_params.threads) : 0,
-            enable_aligner, barcoding_info != nullptr, adapter_trimming_enabled);
+            enable_aligner, barcoding_info != nullptr, adapter_trimming_enabled,
+            options.estimate_poly_a);
 
     const hts_writer::SummaryFileWriter::FieldFlags writer_flags =
             hts_writer::SummaryFileWriter::BASECALLING_FIELDS |
