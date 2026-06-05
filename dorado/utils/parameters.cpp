@@ -17,9 +17,9 @@ ThreadAllocations default_thread_allocations(int num_devices,
     allocs.read_converter_threads = num_devices * 2;
     allocs.read_filter_threads = num_devices * 2;
     allocs.modbase_threads = num_devices * num_modbase_threads;
-    allocs.scaler_node_threads = num_devices * 4;
-    allocs.splitter_node_threads = num_devices;
-    allocs.loader_threads = num_devices;
+    allocs.scaler_node_threads = num_devices * 2;
+    allocs.splitter_node_threads = num_devices * 2;
+    allocs.loader_threads = num_devices * 4;
     allocs.polya_threads = enable_polya ? num_devices * 4 : 0;
     const int total_threads_used = allocs.writer_threads + allocs.read_converter_threads +
                                    allocs.read_filter_threads + allocs.modbase_threads +
