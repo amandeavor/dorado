@@ -178,6 +178,11 @@ ModuleHolder<AnyModule> load_model(const BasecallModelConfig &model_config,
 
 }  // namespace
 
+// Prevent maybe-uninitialized errors in ont_core_cpp sanitizer build stemming from device_guard.
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
 ModuleHolder<AnyModule> load_crf_model(const BasecallModelConfig &model_config,
                                        const torch::TensorOptions &options) {
 #if DORADO_CUDA_BUILD
@@ -192,6 +197,9 @@ ModuleHolder<AnyModule> load_crf_model(const BasecallModelConfig &model_config,
     }
     return load_model<model::CRFModel>(model_config, options);
 }
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 
 size_t auto_calculate_num_runners(const BasecallModelConfig &model_config, float memory_fraction) {
     auto model_name = model_config.model_name();
