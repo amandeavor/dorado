@@ -20,10 +20,11 @@ ThreadAllocations default_thread_allocations(int num_devices,
     allocs.scaler_node_threads = num_devices * 4;
     allocs.splitter_node_threads = num_devices;
     allocs.loader_threads = num_devices;
+    allocs.polya_threads = enable_polya ? num_devices * 4 : 0;
     const int total_threads_used = allocs.writer_threads + allocs.read_converter_threads +
                                    allocs.read_filter_threads + allocs.modbase_threads +
                                    allocs.scaler_node_threads + allocs.loader_threads +
-                                   allocs.splitter_node_threads;
+                                   allocs.splitter_node_threads + allocs.polya_threads;
     const int remaining_threads = max_threads - total_threads_used;
 
     // Divide up remaining threads between the active optional nodes.
@@ -36,8 +37,6 @@ ThreadAllocations default_thread_allocations(int num_devices,
         allocs.barcoder_threads = enable_barcoder ? thread_split : 0;
         allocs.adapter_threads = adapter_trimming ? thread_split : 0;
     }
-    // TODO: find a better thread count, possibly merged with above.
-    allocs.polya_threads = enable_polya ? max_threads : 0;
     return allocs;
 };
 
