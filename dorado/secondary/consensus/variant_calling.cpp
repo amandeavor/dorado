@@ -41,14 +41,6 @@ float round_float(float val, const int32_t decimal_places) {
     return val;
 }
 
-bool variant_ends_before_position(const Variant& var, const int64_t pos) {
-    return (var.pos + std::max<int64_t>(1, std::ssize(var.ref))) <= pos;
-}
-
-bool variant_covers_position(const Variant& var, const int32_t seq_id, const int64_t pos) {
-    return (var.seq_id == seq_id) && (var.pos <= pos) && !variant_ends_before_position(var, pos);
-}
-
 bool is_subset_of_symbols(const std::unordered_set<char>& symbol_map,
                           const std::string_view query) {
     for (const char c : query) {
@@ -230,8 +222,8 @@ float compute_consensus_quality(
         const int64_t rend) {
     std::vector<std::string_view> seqs;
     seqs.reserve(std::size(cons_seqs_with_gaps));
-    for (int64_t i = 0; i < std::ssize(cons_seqs_with_gaps); ++i) {
-        seqs.emplace_back(cons_seqs_with_gaps[i].seq);
+    for (const auto& val : cons_seqs_with_gaps) {
+        seqs.emplace_back(val.seq);
     }
 
     return compute_quality_from_probs(probs_3D, seqs, symbol_lookup, rstart, rend);
@@ -639,6 +631,15 @@ bool append_ref_base(Variant& var,
 
 }  // namespace
 
+bool variant_ends_before_position(const Variant& var, const int32_t seq_id, const int64_t pos) {
+    return (var.seq_id == seq_id) && ((var.pos + std::max<int64_t>(1, std::ssize(var.ref))) <= pos);
+}
+
+bool variant_covers_position(const Variant& var, const int32_t seq_id, const int64_t pos) {
+    return (var.seq_id == seq_id) && (var.pos <= pos) &&
+           !variant_ends_before_position(var, seq_id, pos);
+}
+
 Variant normalize_genotype(const Variant& var, const int32_t ploidy, const float min_qual) {
     Variant ret = var;
 
@@ -664,7 +665,7 @@ Variant normalize_genotype(const Variant& var, const int32_t ploidy, const float
         }
 
         ret.alts = {"."};
-        ret.genotype = {{"GT", oss_gt.str()}, {"GQ", std::to_string(gq)}};
+        ret.genotype = {{"GT", std::move(oss_gt).str()}, {"GQ", std::to_string(gq)}};
         ret.filter = ".";
         return ret;
     }
@@ -1212,7 +1213,7 @@ std::vector<Variant> general_decode_variants(
             const std::string ref(1, draft[pos]);
 
             while ((variant_idx < num_existing_variants) &&
-                   variant_ends_before_position(variants[variant_idx], pos)) {
+                   variant_ends_before_position(variants[variant_idx], seq_id, pos)) {
                 ++variant_idx;
             }
 

@@ -180,6 +180,7 @@ void add_arguments(argparse::ArgumentParser& parser, int& verbosity) {
         parser.add_argument("--models-directory")
                 .help("Optional directory to search for existing models or download new models "
                       "into.");
+        parser.add_argument("--gvcf").help("Output a gVCF instead of a VCF.").flag();
         parser.add_argument("--ambig-ref")
                 .help("Decode variants at ambiguous reference positions.")
                 .flag();
@@ -422,7 +423,8 @@ Options set_options(const argparse::ArgumentParser& parser, const int verbosity)
     opt.models_directory = model_resolution::get_models_directory(
             cli::get_optional_argument<std::string>("--models-directory", parser));
     opt.model_str = parser.get<std::string>("model-override");
-    opt.out_format = VariantCallingFormatEnum::VCF;
+    opt.out_format = parser.get<bool>("gvcf") ? VariantCallingFormatEnum::GVCF
+                                              : VariantCallingFormatEnum::VCF;
     opt.threads = parser.get<int>("threads");
     opt.threads = (opt.threads == 0) ? std::thread::hardware_concurrency() : (opt.threads);
     opt.infer_threads = parser.get<int>("infer-threads");
@@ -1246,6 +1248,17 @@ void run_variant_calling(const Options& opt,
                     static_cast<int64_t>(0), [](const int64_t sum, const secondary::Window& w) {
                         return sum + std::max<int64_t>(0, w.end_no_overlap - w.start_no_overlap);
                     });
+            crd.selected_regions.reserve(std::size(input_regions[seq_id]));
+            for (const secondary::Region& region : input_regions[seq_id]) {
+                const secondary::RegionInt selected_region{static_cast<int32_t>(seq_id),
+                                                           region.start, region.end};
+                if (!secondary::is_valid(selected_region)) {
+                    continue;
+                }
+                const secondary::RegionInt normalized_region =
+                        secondary::normalize_region(selected_region, crd.seq_len);
+                crd.selected_regions.emplace_back(normalized_region);
+            }
 
             // If this chromosome has no BAM regions to process, mark it as ready so it gets popped.
             if (std::empty(bam_regions[seq_id])) {
@@ -1339,7 +1352,7 @@ void run_variant_calling(const Options& opt,
                     wrs_thread_call_variants, stats, draft_readers, opt.continue_on_error,
                     opt.threads, draft_lens, *resources.decoder, hemizygous_regions,
                     opt.pass_min_qual, opt.ambig_ref,
-                    opt.out_format == VariantCallingFormatEnum::GVCF, flank_trim_len,
+                    opt.out_format == VariantCallingFormatEnum::GVCF, ploidy, flank_trim_len,
                     variant_candidate_source);
         });
 

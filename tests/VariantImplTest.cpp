@@ -1432,7 +1432,7 @@ CATCH_TEST_CASE(
 
     worker_variant_calling_reduce(input_queue, output_queue, chrom_reduce_data, worker_terminate,
                                   ret_status, stats, fastx_readers, false, 1, draft_lens, decoder,
-                                  {}, 30.0f, false, false, 1,
+                                  {}, 30.0f, false, false, 2, 1,
                                   secondary::VariantCandidateSource::COMPUTE);
 
     CATCH_REQUIRE(!ret_status.exception_thrown);
@@ -1524,7 +1524,7 @@ CATCH_TEST_CASE(
     // Run the unit under test.
     worker_variant_calling_reduce(input_queue, output_queue, chrom_reduce_data, worker_terminate,
                                   ret_status, stats, fastx_readers, false, 1, draft_lens, decoder,
-                                  {}, 30.0f, false, false, 1,
+                                  {}, 30.0f, false, false, 2, 1,
                                   secondary::VariantCandidateSource::COMPUTE);
 
     // Eval that the run was successful, that the stats processed was capped to 1.0
@@ -1598,7 +1598,7 @@ CATCH_TEST_CASE("worker_variant_calling_reduce tops up progress when no inferenc
     // Run the unit under test.
     worker_variant_calling_reduce(input_queue, output_queue, chrom_reduce_data, worker_terminate,
                                   ret_status, stats, fastx_readers, false, 1, draft_lens, decoder,
-                                  {}, 30.0f, false, false, 1,
+                                  {}, 30.0f, false, false, 2, 1,
                                   secondary::VariantCandidateSource::COMPUTE);
 
     // Eval that the run was successful.
@@ -1699,7 +1699,7 @@ CATCH_TEST_CASE(
 
     worker_variant_calling_reduce(input_queue, output_queue, chrom_reduce_data, worker_terminate,
                                   ret_status, stats, fastx_readers, false, 1, draft_lens, decoder,
-                                  hemizygous_regions, 30.0f, false, false, 1,
+                                  hemizygous_regions, 30.0f, false, false, 2, 1,
                                   secondary::VariantCandidateSource::COMPUTE);
 
     CATCH_REQUIRE(!ret_status.exception_thrown);
@@ -1788,7 +1788,7 @@ CATCH_TEST_CASE(
 
     worker_variant_calling_reduce(input_queue, output_queue, chrom_reduce_data, worker_terminate,
                                   ret_status, stats, fastx_readers, false, 1, draft_lens, decoder,
-                                  hemizygous_regions, 30.0f, false, false, 1,
+                                  hemizygous_regions, 30.0f, false, false, 2, 1,
                                   secondary::VariantCandidateSource::COMPUTE);
 
     CATCH_REQUIRE(!ret_status.exception_thrown);
@@ -1911,6 +1911,75 @@ CATCH_TEST_CASE("filter_hemizygous_variants", TEST_GROUP) {
     const std::vector<secondary::Variant> chr3_filtered_variants =
             smallvar::filter_hemizygous_variants(chr3_variants, hemizygous_regions[2]);
     CATCH_CHECK(chr3_filtered_variants == expected_chr3_filtered_variants);
+}
+
+CATCH_TEST_CASE("worker_variant_calling_reduce emits diploid gVCF records around merged variants",
+                TEST_GROUP) {
+    const auto temp_dir = make_temp_dir("variant_reduce_gvcf_no_samples");
+    const auto reference_fasta = temp_dir.m_path / "reference.fa";
+
+    {
+        std::ofstream ref_out(reference_fasta);
+        ref_out << ">chr1\nACGT\n";
+    }
+
+    // clang-format off
+    std::vector<ChromosomeReduceData> chrom_reduce_data(1);
+    {
+        ChromosomeReduceData& data = chrom_reduce_data[0];
+        data.seq_id = 0;
+        data.seq_name = "chr1";
+        data.seq_len = 4;
+        data.progress_target = 3;
+        data.ready = true;
+        data.num_samples = 0;
+        data.selected_regions = {secondary::RegionInt{0, 1, 4}};
+        data.variants_simple = {secondary::Variant{0, 1, "C", {"C"}, "PASS", {}, 41.0f,
+                                                   {{"GT", "1/1"}, {"GQ", "41"}}, 0, 0},
+                                secondary::Variant{0, 2, "G", {"T"}, "PASS", {}, 42.0f,
+                                                   {{"GT", "1/1"}, {"GQ", "42"}}, 0, 0}};
+    }
+    // clang-format on
+
+    const secondary::DecoderBase decoder(secondary::LabelSchemeType::DIPLOID);
+
+    std::vector<std::unique_ptr<hts_io::FastxRandomReader>> fastx_readers;
+    fastx_readers.emplace_back(std::make_unique<hts_io::FastxRandomReader>(reference_fasta));
+
+    const std::vector<std::pair<std::string, int64_t>> draft_lens{
+            {"chr1", 4},
+    };
+
+    utils::AsyncQueue<secondary::VariantCallingSample> input_queue{2};
+    input_queue.terminate(utils::AsyncQueueTerminateFast::No);
+    utils::AsyncQueue<int64_t> output_queue{2};
+
+    std::atomic<bool> worker_terminate{false};
+    secondary::WorkerReturnStatus ret_status;
+
+    secondary::Stats stats;
+    stats.set("processed", 0.0);
+
+    worker_variant_calling_reduce(input_queue, output_queue, chrom_reduce_data, worker_terminate,
+                                  ret_status, stats, fastx_readers, false, 1, draft_lens, decoder,
+                                  {}, 30.0f, false, true, 2, 1,
+                                  secondary::VariantCandidateSource::COMPUTE);
+
+    // clang-format off
+    CATCH_REQUIRE(!ret_status.exception_thrown);
+    CATCH_REQUIRE(!worker_terminate.load());
+    CATCH_REQUIRE(chrom_reduce_data[0].variants_merged ==
+                  std::vector{secondary::Variant{0, 1, "C", {"."}, ".", {}, 70.0f,
+                                                 {{"GT", "0/0"}, {"GQ", "70"}}, 1, 2},
+                              secondary::Variant{0, 1, "C", {"C"}, "PASS", {}, 41.0f,
+                                                 {{"GT", "1/1"}, {"GQ", "41"}}, 0, 0},
+                              secondary::Variant{0, 2, "G", {"T"}, "PASS", {}, 42.0f,
+                                                 {{"GT", "1/1"}, {"GQ", "42"}}, 0, 0},
+                              secondary::Variant{0, 3, "T", {"."}, ".", {}, 70.0f,
+                                                 {{"GT", "0/0"}, {"GQ", "70"}}, 3, 4}});
+    CATCH_CHECK(stats.get_stats().at("processed") == 3.0);
+    CATCH_CHECK(std::size(output_queue) == 1);
+    // clang-format on
 }
 
 }  // namespace dorado::smallvar::tests
