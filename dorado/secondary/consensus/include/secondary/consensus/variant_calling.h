@@ -28,6 +28,19 @@ namespace dorado::secondary {
 Variant normalize_genotype(const Variant& var, const int32_t ploidy, const float min_qual);
 
 /**
+ * \brief Reduce a polyploid variant to haploid.
+ *          If require_hom is true, then the variant will be called if all alleles have the variant.
+ *          Otherwise, the variant is called if any allele has the variant.
+ *          If the variant is not called, it's alt is cleared so that it will be discarded when
+ *          filtering to valid variants.
+ *          If the number of unique alts is >1, the variant is discarded.
+ * \param var Input polyploid variant.
+ * \param require_hom Whether to require a homozygous call to retain the variant.
+ * \returns New haploid variant.
+ */
+Variant collapse_to_haploid(const Variant& var, const bool require_hom);
+
+/**
  * \brief Normalizes the input variant (pushes it to the left). Stops normalization when another
  *          variant is reached, or until it can no longer be normalized.
  * \param ref_with_gaps Reference (or draft) sequence for the region specified by positions_major.
@@ -59,6 +72,8 @@ Variant normalize_variant(const std::string_view ref_with_gaps,
  *              [num_positions x num_classes]. Current polyploid shape: [num_positions x num_haplotypes x num_classes].
  *              Number of classes corresponds to the number of symbols in the label scheme.
  * \param draft The entire input draft/reference sequence.
+ * \param expected_ploidy The expected number of alleles based on the genomic coordinates; if set to 1 when the output
+ *                        shape > 1, the called variants will be reduced to haploid calls.
  * \param ambig_ref Allow ambiguous reference bases (`N`) for variant calling.
  * \param return_all Returns gVCF records for all reference positions, including the non-variant ones.
  * \param normalize Normalizes the variants (pushes them to the left if possible).
@@ -74,6 +89,7 @@ std::vector<Variant> general_decode_variants(
         const at::Tensor& probs,  // Probabilities for a single sample (not batch).
         const std::string_view draft,
         const float pass_min_qual,
+        const uint32_t expected_ploidy,
         bool ambig_ref,
         bool return_all,
         bool normalize,

@@ -679,6 +679,62 @@ Variant normalize_genotype(const Variant& var, const int32_t ploidy, const float
     return ret;
 }
 
+Variant collapse_to_haploid(const Variant& var, const bool require_hom) {
+    Variant ret = var;
+
+    // This is a gVCF record.
+    if ((var.filter == ".") || (var.alts == std::vector<std::string>{"."})) {
+        ret.alts = {"."};
+        ret.filter = ".";
+        std::vector<std::pair<std::string, std::string>>::iterator it_gt;
+        for (it_gt = ret.genotype.begin(); it_gt != ret.genotype.end(); ++it_gt) {
+            if (it_gt->first == "GT") {
+                it_gt->second = "0";
+                break;
+            }
+        }
+        return ret;
+    }
+
+    if (std::ssize(var.alts) > 1) {
+        spdlog::warn(
+                "Number of alts ({}) is larger than ploidy (1)! Marking this variant for removal.",
+                std::size(var.alts));
+        ret.alts.clear();
+        ret.filter = ".";
+        std::vector<std::pair<std::string, std::string>>::iterator it_gt;
+        for (it_gt = ret.genotype.begin(); it_gt != ret.genotype.end(); ++it_gt) {
+            if (it_gt->first == "GT") {
+                it_gt->second = "0";
+                break;
+            }
+        }
+        return ret;
+    }
+
+    bool is_homozygous = true;
+    std::vector<std::pair<std::string, std::string>>::iterator it_gt;
+    for (it_gt = ret.genotype.begin(); it_gt != ret.genotype.end(); ++it_gt) {
+        if (it_gt->first == "GT") {
+            if (it_gt->second.find("0") != std::string::npos) {
+                is_homozygous = false;
+            }
+            break;
+        }
+    }
+    if (it_gt == ret.genotype.end()) {
+        spdlog::warn("Failed to find genotype record for variant at {}:{}", ret.ref, ret.pos);
+        ret.alts.clear();
+    }
+    if (is_homozygous || !require_hom) {
+        it_gt->second = "1";
+    } else {
+        ret.alts.clear();
+        it_gt->second = "0";
+    }
+    return ret;
+}
+
 Variant normalize_variant(const std::string_view ref_with_gaps,
                           const std::vector<std::string_view>& cons_seqs_with_gaps,
                           const std::vector<int64_t>& positions_major,
@@ -933,6 +989,7 @@ std::vector<Variant> general_decode_variants(
         const at::Tensor& probs,  // Probabilities for a single sample (not batch).
         const std::string_view draft,
         const float pass_min_qual,
+        const uint32_t expected_ploidy,
         const bool ambig_ref,
         const bool return_all,
         const bool normalize,
@@ -1139,6 +1196,15 @@ std::vector<Variant> general_decode_variants(
     normalized_variants.reserve(std::size(variants));
     for (const Variant& var : variants) {
         Variant new_var = normalize_genotype(var, num_haplotypes, pass_min_qual);
+
+        if (num_haplotypes != expected_ploidy) {
+            if (expected_ploidy == 1) {
+                new_var = collapse_to_haploid(new_var, true);
+            } else {
+                spdlog::warn("Mismatch between number of haplotypes ({}) and expected ploidy ({}).",
+                             num_haplotypes, expected_ploidy);
+            }
+        }
 
         // Sanity check.
         if (is_valid(new_var)) {

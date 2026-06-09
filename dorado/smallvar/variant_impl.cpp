@@ -1271,7 +1271,8 @@ std::vector<secondary::Variant> call_variants_single_chrom(
     for (const auto& vc_sample : joined_samples) {
         std::vector<secondary::Variant> variants = secondary::general_decode_variants(
                 decoder, vc_sample.seq_id, vc_sample.positions_major, vc_sample.positions_minor,
-                vc_sample.logits, draft, pass_min_qual, ambig_ref, gvcf, true, true, true);
+                vc_sample.logits, draft, pass_min_qual, 2 /*expected_ploidy*/, ambig_ref, gvcf,
+                true, true, true);
 
         results.insert(std::end(results), std::make_move_iterator(std::begin(variants)),
                        std::make_move_iterator(std::end(variants)));
