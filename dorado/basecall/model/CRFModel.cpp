@@ -44,7 +44,7 @@ CRFModelImpl::CRFModelImpl(const BasecallModelConfig &config, at::TensorOptions 
 
     if (config.out_features.has_value()) {
 #if DORADO_CUDA_BUILD
-        const bool can_use_koi = koi_can_run_flstm();
+        const bool can_use_koi = opts.device().is_cuda() && koi_can_run_flstm();
 #else
         const bool can_use_koi = false;
 #endif
