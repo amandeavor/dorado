@@ -1434,7 +1434,7 @@ CATCH_TEST_CASE(
 
     worker_variant_calling_reduce(input_queue, output_queue, chrom_reduce_data, worker_terminate,
                                   ret_status, stats, fastx_readers, false, 1, draft_lens, decoder,
-                                  30.0f, false, false, 1,
+                                  {}, 30.0f, false, false, 1,
                                   secondary::VariantCandidateSource::COMPUTE);
 
     CATCH_REQUIRE(!ret_status.exception_thrown);
@@ -1526,7 +1526,7 @@ CATCH_TEST_CASE(
     // Run the unit under test.
     worker_variant_calling_reduce(input_queue, output_queue, chrom_reduce_data, worker_terminate,
                                   ret_status, stats, fastx_readers, false, 1, draft_lens, decoder,
-                                  30.0f, false, false, 1,
+                                  {}, 30.0f, false, false, 1,
                                   secondary::VariantCandidateSource::COMPUTE);
 
     // Eval that the run was successful, that the stats processed was capped to 1.0
@@ -1600,7 +1600,7 @@ CATCH_TEST_CASE("worker_variant_calling_reduce tops up progress when no inferenc
     // Run the unit under test.
     worker_variant_calling_reduce(input_queue, output_queue, chrom_reduce_data, worker_terminate,
                                   ret_status, stats, fastx_readers, false, 1, draft_lens, decoder,
-                                  30.0f, false, false, 1,
+                                  {}, 30.0f, false, false, 1,
                                   secondary::VariantCandidateSource::COMPUTE);
 
     // Eval that the run was successful.
@@ -1612,6 +1612,198 @@ CATCH_TEST_CASE("worker_variant_calling_reduce tops up progress when no inferenc
     CATCH_CHECK(std::size(output_queue) == 1);
 
     // Check that the sequence was marked as processed and ready.
+    int64_t ready_seq_id = -1;
+    CATCH_REQUIRE(output_queue.try_pop(ready_seq_id) == utils::AsyncQueueStatus::Success);
+    CATCH_CHECK(ready_seq_id == 0);
+}
+
+CATCH_TEST_CASE(
+        "worker_variant_calling_reduce collapses variants to haploid when hemizygous_regions is "
+        "set",
+        TEST_GROUP) {
+    /**
+     * \brief Verifies that worker_variant_calling_reduce collapses hom diploid variants to haploid when
+     *          homozygous_regions is set.
+     */
+    const auto temp_dir = make_temp_dir("variant_reduce_trim");
+    const auto reference_fasta = temp_dir.m_path / "reference.fa";
+
+    {
+        std::ofstream ref_out(reference_fasta);
+        ref_out << ">chr1\nAAAAAA\n";
+    }
+
+    const secondary::DecoderBase decoder(secondary::LabelSchemeType::DIPLOID);
+    secondary::VariantCallingSample vc_sample{
+            .seq_id = 0,
+            .positions_major = {4, 5},
+            .positions_minor = {0, 0},
+            .logits = make_polyploid_probs(decoder.get_label_scheme_symbols(), {"AA", "AA"},
+                                           {0.999f, 0.999f}),
+    };
+    const secondary::Variant simple_variant{
+            .seq_id = 0,
+            .pos = 4,
+            .ref = "A",
+            .alts = {"T"},
+            .filter = "PASS",
+            .info = {},
+            .qual = 60.0f,
+            .genotype = {{"GT", "1/1"}, {"GQ", "60"}},
+            .rstart = 0,
+            .rend = 0,
+    };
+    const secondary::Variant expected_simple_variant{
+            .seq_id = 0,
+            .pos = 4,
+            .ref = "A",
+            .alts = {"T"},
+            .filter = "PASS",
+            .info = {},
+            .qual = 60.0f,
+            .genotype = {{"GT", "1"}, {"GQ", "60"}},
+            .rstart = 0,
+            .rend = 0,
+    };
+    const std::vector<std::vector<secondary::Region>> hemizygous_regions = {{
+            {"ref", 0, 10},
+    }};
+
+    std::vector<ChromosomeReduceData> chrom_reduce_data(1);
+    {
+        ChromosomeReduceData& data = chrom_reduce_data[0];
+        data.seq_id = 0;
+        data.seq_name = "chr1";
+        data.seq_len = 6;
+        data.progress_target = 2;
+        data.ready = true;
+        data.num_samples = 1;
+        data.variants_simple = {simple_variant};
+    }
+
+    std::vector<std::unique_ptr<hts_io::FastxRandomReader>> fastx_readers;
+    fastx_readers.emplace_back(std::make_unique<hts_io::FastxRandomReader>(reference_fasta));
+
+    const std::vector<std::pair<std::string, int64_t>> draft_lens{
+            {"chr1", 6},
+    };
+
+    utils::AsyncQueue<secondary::VariantCallingSample> input_queue{2};
+    utils::AsyncQueue<int64_t> output_queue{2};
+    CATCH_REQUIRE(input_queue.try_push(std::move(vc_sample)) == utils::AsyncQueueStatus::Success);
+    input_queue.terminate(utils::AsyncQueueTerminateFast::No);
+
+    std::atomic<bool> worker_terminate{false};
+    secondary::WorkerReturnStatus ret_status;
+
+    secondary::Stats stats;
+    stats.set("processed", 0.0);
+
+    worker_variant_calling_reduce(input_queue, output_queue, chrom_reduce_data, worker_terminate,
+                                  ret_status, stats, fastx_readers, false, 1, draft_lens, decoder,
+                                  hemizygous_regions, 30.0f, false, false, 1,
+                                  secondary::VariantCandidateSource::COMPUTE);
+
+    CATCH_REQUIRE(!ret_status.exception_thrown);
+    CATCH_REQUIRE(!worker_terminate.load());
+    CATCH_REQUIRE(std::empty(chrom_reduce_data[0].variants_inference));
+    CATCH_CHECK(chrom_reduce_data[0].variants_merged == std::vector{expected_simple_variant});
+    CATCH_REQUIRE(std::size(chrom_reduce_data[0].processed_regions) == 1);
+    CATCH_CHECK(chrom_reduce_data[0].processed_regions[0].start == 4);
+    CATCH_CHECK(chrom_reduce_data[0].processed_regions[0].stop == 6);
+    CATCH_CHECK(chrom_reduce_data[0].processed_regions[0].value == 0);
+    CATCH_CHECK(std::size(output_queue) == 1);
+    CATCH_CHECK(stats.get_stats().at("processed") == 2.0);
+
+    int64_t ready_seq_id = -1;
+    CATCH_REQUIRE(output_queue.try_pop(ready_seq_id) == utils::AsyncQueueStatus::Success);
+    CATCH_CHECK(ready_seq_id == 0);
+}
+
+CATCH_TEST_CASE(
+        "worker_variant_calling_reduce keeps variants in diploid region when hemizygous_regions is "
+        "set",
+        TEST_GROUP) {
+    /**
+     * \brief Verifies that worker_variant_calling_reduce keeps diploid variants in diploid regions when
+     *          hemizygous_regions is set.
+     */
+    const auto temp_dir = make_temp_dir("variant_reduce_trim");
+    const auto reference_fasta = temp_dir.m_path / "reference.fa";
+
+    {
+        std::ofstream ref_out(reference_fasta);
+        ref_out << ">chr1\nAAAAAA\n";
+    }
+
+    const secondary::DecoderBase decoder(secondary::LabelSchemeType::DIPLOID);
+    secondary::VariantCallingSample vc_sample{
+            .seq_id = 0,
+            .positions_major = {4, 5},
+            .positions_minor = {0, 0},
+            .logits = make_polyploid_probs(decoder.get_label_scheme_symbols(), {"AA", "AA"},
+                                           {0.999f, 0.999f}),
+    };
+    const secondary::Variant simple_variant{
+            .seq_id = 0,
+            .pos = 4,
+            .ref = "A",
+            .alts = {"T"},
+            .filter = "PASS",
+            .info = {},
+            .qual = 60.0f,
+            .genotype = {{"GT", "1/1"}, {"GQ", "60"}},
+            .rstart = 0,
+            .rend = 0,
+    };
+    const std::vector<std::vector<secondary::Region>> hemizygous_regions = {{{"ref", 6, 10}}};
+
+    std::vector<ChromosomeReduceData> chrom_reduce_data(1);
+    {
+        ChromosomeReduceData& data = chrom_reduce_data[0];
+        data.seq_id = 0;
+        data.seq_name = "chr1";
+        data.seq_len = 6;
+        data.progress_target = 2;
+        data.ready = true;
+        data.num_samples = 1;
+        data.variants_simple = {simple_variant};
+    }
+
+    std::vector<std::unique_ptr<hts_io::FastxRandomReader>> fastx_readers;
+    fastx_readers.emplace_back(std::make_unique<hts_io::FastxRandomReader>(reference_fasta));
+
+    const std::vector<std::pair<std::string, int64_t>> draft_lens{
+            {"chr1", 6},
+    };
+
+    utils::AsyncQueue<secondary::VariantCallingSample> input_queue{2};
+    utils::AsyncQueue<int64_t> output_queue{2};
+    CATCH_REQUIRE(input_queue.try_push(std::move(vc_sample)) == utils::AsyncQueueStatus::Success);
+    input_queue.terminate(utils::AsyncQueueTerminateFast::No);
+
+    std::atomic<bool> worker_terminate{false};
+    secondary::WorkerReturnStatus ret_status;
+
+    secondary::Stats stats;
+    stats.set("processed", 0.0);
+
+    worker_variant_calling_reduce(input_queue, output_queue, chrom_reduce_data, worker_terminate,
+                                  ret_status, stats, fastx_readers, false, 1, draft_lens, decoder,
+                                  hemizygous_regions, 30.0f, false, false, 1,
+                                  secondary::VariantCandidateSource::COMPUTE);
+
+    CATCH_REQUIRE(!ret_status.exception_thrown);
+    CATCH_REQUIRE(!worker_terminate.load());
+    CATCH_REQUIRE(std::empty(chrom_reduce_data[0].variants_inference));
+    CATCH_CHECK(chrom_reduce_data[0].variants_merged == std::vector{simple_variant});
+    CATCH_REQUIRE(std::size(chrom_reduce_data[0].processed_regions) == 1);
+    CATCH_CHECK(chrom_reduce_data[0].processed_regions[0].start == 4);
+    CATCH_CHECK(chrom_reduce_data[0].processed_regions[0].stop == 6);
+    CATCH_CHECK(chrom_reduce_data[0].processed_regions[0].value == 0);
+    CATCH_CHECK(std::size(output_queue) == 1);
+    CATCH_CHECK(stats.get_stats().at("processed") == 2.0);
+
     int64_t ready_seq_id = -1;
     CATCH_REQUIRE(output_queue.try_pop(ready_seq_id) == utils::AsyncQueueStatus::Success);
     CATCH_CHECK(ready_seq_id == 0);

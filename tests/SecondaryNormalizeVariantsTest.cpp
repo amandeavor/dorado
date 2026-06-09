@@ -293,7 +293,7 @@ CATCH_TEST_CASE("normalize_variant", TEST_GROUP) {
     }
 }
 
-CATCH_TEST_CASE("collapse_to_haplotype", TEST_GROUP) {
+CATCH_TEST_CASE("collapse_to_haploid", TEST_GROUP) {
     spdlog::set_level(spdlog::level::trace);
     struct TestCase {
         std::string test_name;

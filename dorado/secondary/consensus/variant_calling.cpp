@@ -697,9 +697,8 @@ Variant collapse_to_haploid(const Variant& var, const bool require_hom) {
     }
 
     if (std::ssize(var.alts) > 1) {
-        spdlog::warn(
-                "Number of alts ({}) is larger than ploidy (1)! Marking this variant for removal.",
-                std::size(var.alts));
+        spdlog::debug("Discarding variant with more than one alt in haploid region ({}, {}).",
+                      var.seq_id, var.pos);
         ret.alts.clear();
         ret.filter = ".";
         std::vector<std::pair<std::string, std::string>>::iterator it_gt;
@@ -723,7 +722,7 @@ Variant collapse_to_haploid(const Variant& var, const bool require_hom) {
         }
     }
     if (it_gt == ret.genotype.end()) {
-        spdlog::warn("Failed to find genotype record for variant at {}:{}", ret.ref, ret.pos);
+        spdlog::warn("Failed to find genotype record for variant at ({}, {})", ret.seq_id, ret.pos);
         ret.alts.clear();
     }
     if (is_homozygous || !require_hom) {
@@ -731,6 +730,8 @@ Variant collapse_to_haploid(const Variant& var, const bool require_hom) {
     } else {
         ret.alts.clear();
         it_gt->second = "0";
+        spdlog::debug("Discarding heterozygous variant ({}, {}) in haploid region.", ret.seq_id,
+                      ret.pos);
     }
     return ret;
 }
@@ -989,7 +990,6 @@ std::vector<Variant> general_decode_variants(
         const at::Tensor& probs,  // Probabilities for a single sample (not batch).
         const std::string_view draft,
         const float pass_min_qual,
-        const uint32_t expected_ploidy,
         const bool ambig_ref,
         const bool return_all,
         const bool normalize,
@@ -1196,15 +1196,6 @@ std::vector<Variant> general_decode_variants(
     normalized_variants.reserve(std::size(variants));
     for (const Variant& var : variants) {
         Variant new_var = normalize_genotype(var, num_haplotypes, pass_min_qual);
-
-        if (num_haplotypes != expected_ploidy) {
-            if (expected_ploidy == 1) {
-                new_var = collapse_to_haploid(new_var, true);
-            } else {
-                spdlog::warn("Mismatch between number of haplotypes ({}) and expected ploidy ({}).",
-                             num_haplotypes, expected_ploidy);
-            }
-        }
 
         // Sanity check.
         if (is_valid(new_var)) {

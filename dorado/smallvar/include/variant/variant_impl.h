@@ -7,6 +7,7 @@
 #include "secondary/common/batched_data.h"
 #include "secondary/common/interval.h"
 #include "secondary/common/interval_tree_types.h"
+#include "secondary/common/region.h"
 #include "secondary/common/stats.h"
 #include "secondary/common/variant.h"
 #include "secondary/common/vcf_writer.h"
@@ -234,6 +235,7 @@ void worker_separate_decode_data(utils::AsyncQueue<DecodeData>& input_queue,
  * \param num_threads Number of worker threads assigned to this reduction stage.
  * \param draft_lens Draft/reference names and lengths in seq_id order.
  * \param decoder Decoder used to convert model outputs into consensus symbols.
+ * \param hemizygous_regions Per-chromosome vector of regions where we should output a haploid call.
  * \param pass_min_qual Minimum QUAL required to mark decoded variants as PASS.
  * \param ambig_ref Whether ambiguous reference bases are allowed during variant decoding.
  * \param gvcf Whether non-variant positions should be emitted as gVCF records.
@@ -252,6 +254,7 @@ void worker_variant_calling_reduce(
         const int32_t num_threads,
         const std::vector<std::pair<std::string, int64_t>>& draft_lens,
         const secondary::DecoderBase& decoder,
+        const std::vector<std::vector<secondary::Region>>& hemizygous_regions,
         const float pass_min_qual,
         const bool ambig_ref,
         const bool gvcf,

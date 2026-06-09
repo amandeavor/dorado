@@ -3,6 +3,7 @@
 #include "hts_utils/FastxRandomReader.h"
 #include "sample.h"
 #include "secondary/common/interval.h"
+#include "secondary/common/region.h"
 #include "secondary/common/variant.h"
 #include "secondary/features/decoder_base.h"
 #include "variant_calling_sample.h"
@@ -72,8 +73,6 @@ Variant normalize_variant(const std::string_view ref_with_gaps,
  *              [num_positions x num_classes]. Current polyploid shape: [num_positions x num_haplotypes x num_classes].
  *              Number of classes corresponds to the number of symbols in the label scheme.
  * \param draft The entire input draft/reference sequence.
- * \param expected_ploidy The expected number of alleles based on the genomic coordinates; if set to 1 when the output
- *                        shape > 1, the called variants will be reduced to haploid calls.
  * \param ambig_ref Allow ambiguous reference bases (`N`) for variant calling.
  * \param return_all Returns gVCF records for all reference positions, including the non-variant ones.
  * \param normalize Normalizes the variants (pushes them to the left if possible).
@@ -89,7 +88,6 @@ std::vector<Variant> general_decode_variants(
         const at::Tensor& probs,  // Probabilities for a single sample (not batch).
         const std::string_view draft,
         const float pass_min_qual,
-        const uint32_t expected_ploidy,
         bool ambig_ref,
         bool return_all,
         bool normalize,

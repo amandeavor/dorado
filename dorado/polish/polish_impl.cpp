@@ -1678,7 +1678,7 @@ std::vector<secondary::Variant> call_variants(
                     std::vector<secondary::Variant> variants = secondary::general_decode_variants(
                             decoder, vc_sample.seq_id, vc_sample.positions_major,
                             vc_sample.positions_minor, vc_sample.logits, draft, pass_min_qual,
-                            1 /*expected_ploidy*/, ambig_ref, gvcf, true, true, true);
+                            ambig_ref, gvcf, true, true, true);
 
                     ps.add("processed", static_cast<double>(vc_sample.end() - vc_sample.start()));
 
