@@ -686,10 +686,9 @@ Variant collapse_to_haploid(const Variant& var, const bool require_hom) {
     if ((var.filter == ".") || (var.alts == std::vector<std::string>{"."})) {
         ret.alts = {"."};
         ret.filter = ".";
-        std::vector<std::pair<std::string, std::string>>::iterator it_gt;
-        for (it_gt = ret.genotype.begin(); it_gt != ret.genotype.end(); ++it_gt) {
-            if (it_gt->first == "GT") {
-                it_gt->second = "0";
+        for (auto& it_gt : ret.genotype) {
+            if (it_gt.first == "GT") {
+                it_gt.second = "0";
                 break;
             }
         }
@@ -701,10 +700,9 @@ Variant collapse_to_haploid(const Variant& var, const bool require_hom) {
                       var.seq_id, var.pos);
         ret.alts.clear();
         ret.filter = ".";
-        std::vector<std::pair<std::string, std::string>>::iterator it_gt;
-        for (it_gt = ret.genotype.begin(); it_gt != ret.genotype.end(); ++it_gt) {
-            if (it_gt->first == "GT") {
-                it_gt->second = "0";
+        for (auto& it_gt : ret.genotype) {
+            if (it_gt.first == "GT") {
+                it_gt.second = "0";
                 break;
             }
         }

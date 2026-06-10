@@ -1332,7 +1332,9 @@ std::vector<secondary::Variant> merge_variants(
     return new_variants;
 }
 
-std::vector<secondary::Variant> filter_to_haploid_variants(
+}  // namespace
+
+std::vector<secondary::Variant> filter_hemizygous_variants(
         const std::vector<secondary::Variant>& variants,
         const std::vector<secondary::Region>& hemizygous_regions) {
     if (std::empty(hemizygous_regions)) {
@@ -1354,8 +1356,9 @@ std::vector<secondary::Variant> filter_to_haploid_variants(
                 // variant overlaps the region end
                 if ((var_start < iter_regions->start) ||
                     ((var_end > iter_regions->end) && (iter_regions->end > 0))) {
-                    spdlog::debug("Variant {} {} overlaps hemizygous region end, skipping.",
-                                  iter_regions->name, var.pos);
+                    spdlog::debug(
+                            "Variant {} {} overlaps hemizygous region end, leaving it unchanged.",
+                            iter_regions->name, var.pos);
                 } else {
                     new_var = secondary::collapse_to_haploid(var, true);
                 }
@@ -1368,8 +1371,6 @@ std::vector<secondary::Variant> filter_to_haploid_variants(
     }
     return filtered_variants;
 }
-
-}  // namespace
 
 void worker_variant_calling_reduce(
         utils::AsyncQueue<secondary::VariantCallingSample>& input_queue,
@@ -1483,7 +1484,7 @@ void worker_variant_calling_reduce(
             const std::vector<secondary::Region>& reduce_hemizygous = hemizygous_regions[seq_id];
             if (!std::empty(reduce_hemizygous)) {
                 reduce_data.variants_merged =
-                        filter_to_haploid_variants(reduce_data.variants_merged, reduce_hemizygous);
+                        filter_hemizygous_variants(reduce_data.variants_merged, reduce_hemizygous);
             }
         }
 

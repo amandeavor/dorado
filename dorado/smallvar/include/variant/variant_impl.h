@@ -300,4 +300,15 @@ std::vector<secondary::Variant> convert_variants(
         int32_t ploidy,
         float pass_min_qual);
 
+/**
+ * \brief Selects variants according to overlaps with hemizygous_regions and passes them to
+          secondary::collapse_to_haploid.
+ * \param variants Input variants for a single contig.
+ * \param hemizygous_regions Regions in which to output hemizygous calls for a single contig, possibly empty.
+ * \return Filtered and collapsed variants.
+ */
+std::vector<secondary::Variant> filter_hemizygous_variants(
+        const std::vector<secondary::Variant>& variants,
+        const std::vector<secondary::Region>& hemizygous_regions);
+
 }  // namespace dorado::smallvar

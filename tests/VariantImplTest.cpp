@@ -1809,4 +1809,110 @@ CATCH_TEST_CASE(
     CATCH_CHECK(ready_seq_id == 0);
 }
 
+CATCH_TEST_CASE("filter_hemizygous_variants", TEST_GROUP) {
+    /**
+     * \brief Test handling of variant and hemizygous region overlaps in filter_hemizygous_variants.
+     */
+
+    // clang-format off
+    const std::vector<std::vector<secondary::Region>> hemizygous_regions = {
+        {{"chr1", 0, -1}},                    // entire contig region with end unspecified
+        {},                                   // no regions specified
+        {{"chr3", 10, 20}, {"chr3", 30, 40}}, // partial regions
+    };
+
+    const std::vector<secondary::Variant> chr1_variants = {
+        {
+            // collapsed because hom in hemizygous region
+            .seq_id = 0, .pos = 0, .ref = "A", .alts = {"T"}, .filter = "PASS", .info = {}, .qual = 60.0f, .genotype = {{"GT", "1/1"}, {"GQ", "60"}}, .rstart = 0, .rend = 0,
+        }, {
+            // filtered because het-alt
+            .seq_id = 0, .pos = 5, .ref = "A", .alts = {"T", "C"}, .filter = "PASS", .info = {}, .qual = 60.0f, .genotype = {{"GT", "1/2"}, {"GQ", "60"}}, .rstart = 0, .rend = 0,
+        }, {
+            // filtered because het
+            .seq_id = 0, .pos = 5, .ref = "A", .alts = {"T"}, .filter = "PASS", .info = {}, .qual = 60.0f, .genotype = {{"GT", "0/1"}, {"GQ", "60"}}, .rstart = 0, .rend = 0,
+        }
+    };
+    const std::vector<secondary::Variant> expected_chr1_filtered_variants = {
+        {
+            // collapsed because hom in hemizygous region
+            .seq_id = 0, .pos = 0, .ref = "A", .alts = {"T"}, .filter = "PASS", .info = {}, .qual = 60.0f, .genotype = {{"GT", "1"}, {"GQ", "60"}}, .rstart = 0, .rend = 0,
+        }
+    };
+    // clang-format on
+
+    const std::vector<secondary::Variant> chr1_filtered_variants =
+            smallvar::filter_hemizygous_variants(chr1_variants, hemizygous_regions[0]);
+    CATCH_CHECK(chr1_filtered_variants == expected_chr1_filtered_variants);
+
+    // clang-format off
+    const std::vector<secondary::Variant> chr2_variants = {
+        {
+            .seq_id = 1, .pos = 0, .ref = "A", .alts = {"T"}, .filter = "PASS", .info = {}, .qual = 60.0f, .genotype = {{"GT", "1/1"}, {"GQ", "60"}}, .rstart = 0, .rend = 0,
+        }, {
+            .seq_id = 1, .pos = 5, .ref = "A", .alts = {"T", "C"}, .filter = "PASS", .info = {}, .qual = 60.0f, .genotype = {{"GT", "1/2"}, {"GQ", "60"}}, .rstart = 0, .rend = 0,
+        }, {
+            .seq_id = 1, .pos = 10, .ref = "A", .alts = {"T"}, .filter = "PASS", .info = {}, .qual = 60.0f, .genotype = {{"GT", "0/1"}, {"GQ", "60"}}, .rstart = 0, .rend = 0,
+        }
+    };
+    // clang-format on
+
+    const std::vector<secondary::Variant> chr2_filtered_variants =
+            smallvar::filter_hemizygous_variants(chr2_variants, hemizygous_regions[1]);
+    // all unchanged because hemizygous region list is empty
+    CATCH_CHECK(chr2_filtered_variants == chr2_variants);
+
+    // clang-format off
+    const std::vector<secondary::Variant> chr3_variants = {
+        {
+            // unchanged because outside hemizygous region
+            .seq_id = 2, .pos = 1, .ref = "A", .alts = {"T"}, .filter = "PASS", .info = {}, .qual = 60.0f, .genotype = {{"GT", "1/1"}, {"GQ", "60"}}, .rstart = 0, .rend = 0,
+        }, {
+            // unchanged because spans start of a hemizygous region
+            .seq_id = 2, .pos = 8, .ref = "ACCGTGT", .alts = {"T"}, .filter = "PASS", .info = {}, .qual = 60.0f, .genotype = {{"GT", "1/1"}, {"GQ", "60"}}, .rstart = 0, .rend = 0,
+        }, {
+            // discarded because het in a hemizygous region
+            .seq_id = 2, .pos = 16, .ref = "A", .alts = {"T"}, .filter = "PASS", .info = {}, .qual = 60.0f, .genotype = {{"GT", "0/1"}, {"GQ", "60"}}, .rstart = 0, .rend = 0,
+        }, {
+            // unchanged because spans end of a hemizygous region
+            .seq_id = 2, .pos = 19, .ref = "AGAG", .alts = {"A"}, .filter = "PASS", .info = {}, .qual = 60.0f, .genotype = {{"GT", "0/1"}, {"GQ", "60"}}, .rstart = 0, .rend = 0,
+        }, {
+            // unchanged because outside hemizygous region
+            .seq_id = 2, .pos = 22, .ref = "A", .alts = {"C"}, .filter = "PASS", .info = {}, .qual = 60.0f, .genotype = {{"GT", "0/1"}, {"GQ", "60"}}, .rstart = 0, .rend = 0,
+        }, {
+            // collapsed because hom inside a hemizygous region
+            .seq_id = 2, .pos = 33, .ref = "ACC", .alts = {"A"}, .filter = "PASS", .info = {}, .qual = 60.0f, .genotype = {{"GT", "1/1"}, {"GQ", "60"}}, .rstart = 0, .rend = 0,
+        }, {
+            // unchanged because outside hemizygous region
+            .seq_id = 2, .pos = 43, .ref = "G", .alts = {"GTTC"}, .filter = "PASS", .info = {}, .qual = 60.0f, .genotype = {{"GT", "1/1"}, {"GQ", "60"}}, .rstart = 0, .rend = 0,
+        },
+    };
+    const std::vector<secondary::Variant> expected_chr3_filtered_variants = {
+        {
+            // unchanged because outside hemizygous region
+            .seq_id = 2, .pos = 1, .ref = "A", .alts = {"T"}, .filter = "PASS", .info = {}, .qual = 60.0f, .genotype = {{"GT", "1/1"}, {"GQ", "60"}}, .rstart = 0, .rend = 0,
+        }, {
+            // unchanged because spans start of a hemizygous region
+            .seq_id = 2, .pos = 8, .ref = "ACCGTGT", .alts = {"T"}, .filter = "PASS", .info = {}, .qual = 60.0f, .genotype = {{"GT", "1/1"}, {"GQ", "60"}}, .rstart = 0, .rend = 0,
+        }, {
+            // unchanged because spans end of a hemizygous region
+            .seq_id = 2, .pos = 19, .ref = "AGAG", .alts = {"A"}, .filter = "PASS", .info = {}, .qual = 60.0f, .genotype = {{"GT", "0/1"}, {"GQ", "60"}}, .rstart = 0, .rend = 0,
+        }, {
+            // unchanged because outside hemizygous region
+            .seq_id = 2, .pos = 22, .ref = "A", .alts = {"C"}, .filter = "PASS", .info = {}, .qual = 60.0f, .genotype = {{"GT", "0/1"}, {"GQ", "60"}}, .rstart = 0, .rend = 0,
+        }, {
+            // collapsed because hom inside a hemizygous region
+            .seq_id = 2, .pos = 33, .ref = "ACC", .alts = {"A"}, .filter = "PASS", .info = {}, .qual = 60.0f, .genotype = {{"GT", "1"}, {"GQ", "60"}}, .rstart = 0, .rend = 0,
+        }, {
+            // unchanged because outside hemizygous region
+            .seq_id = 2, .pos = 43, .ref = "G", .alts = {"GTTC"}, .filter = "PASS", .info = {}, .qual = 60.0f, .genotype = {{"GT", "1/1"}, {"GQ", "60"}}, .rstart = 0, .rend = 0,
+        },
+    };
+    // clang-format on
+
+    const std::vector<secondary::Variant> chr3_filtered_variants =
+            smallvar::filter_hemizygous_variants(chr3_variants, hemizygous_regions[2]);
+    CATCH_CHECK(chr3_filtered_variants == expected_chr3_filtered_variants);
+}
+
 }  // namespace dorado::smallvar::tests
