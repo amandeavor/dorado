@@ -52,28 +52,36 @@ namespace {
 #endif
 static_assert(ONT_NVML_BUFFER_SIZE, "nvml buffer size must be defined");
 
+#if NVML_API_VERSION < 13
+#define FOR_EACH_NVML_TEMPERATURE_SYMBOL(X) X(DeviceGetTemperature, false)
+#define FOR_EACH_NVML_CLOCKS_SYMBOL(X) X(DeviceGetCurrentClocksThrottleReasons, false)
+#else
+#define FOR_EACH_NVML_TEMPERATURE_SYMBOL(X) X(DeviceGetTemperatureV, false)
+#define FOR_EACH_NVML_CLOCKS_SYMBOL(X) X(DeviceGetCurrentClocksEventReasons, false)
+#endif
+
 // Prefixless versions of symbols we use
 // X(name, optional)
-#define FOR_EACH_NVML_SYMBOL(X)                     \
-    X(DeviceGetCount, false)                        \
-    X(DeviceGetCount_v2, true)                      \
-    X(DeviceGetCurrentClocksThrottleReasons, false) \
-    X(DeviceGetHandleByIndex, false)                \
-    X(DeviceGetHandleByIndex_v2, true)              \
-    X(DeviceGetHandleByUUID, false)                 \
-    X(DeviceGetIndex, false)                        \
-    X(DeviceGetName, false)                         \
-    X(DeviceGetPerformanceState, false)             \
-    X(DeviceGetPowerManagementDefaultLimit, false)  \
-    X(DeviceGetPowerUsage, false)                   \
-    X(DeviceGetTemperature, false)                  \
-    X(DeviceGetTemperatureThreshold, false)         \
-    X(DeviceGetUtilizationRates, false)             \
-    X(Init, false)                                  \
-    X(Init_v2, true)                                \
-    X(Shutdown, false)                              \
-    X(SystemGetDriverVersion, false)                \
-    X(ErrorString, false)                           \
+#define FOR_EACH_NVML_SYMBOL(X)                    \
+    X(DeviceGetCount, false)                       \
+    X(DeviceGetCount_v2, true)                     \
+    FOR_EACH_NVML_CLOCKS_SYMBOL(X)                 \
+    X(DeviceGetHandleByIndex, false)               \
+    X(DeviceGetHandleByIndex_v2, true)             \
+    X(DeviceGetHandleByUUID, false)                \
+    X(DeviceGetIndex, false)                       \
+    X(DeviceGetName, false)                        \
+    X(DeviceGetPerformanceState, false)            \
+    X(DeviceGetPowerManagementDefaultLimit, false) \
+    X(DeviceGetPowerUsage, false)                  \
+    FOR_EACH_NVML_TEMPERATURE_SYMBOL(X)            \
+    X(DeviceGetTemperatureThreshold, false)        \
+    X(DeviceGetUtilizationRates, false)            \
+    X(Init, false)                                 \
+    X(Init_v2, true)                               \
+    X(Shutdown, false)                             \
+    X(SystemGetDriverVersion, false)               \
+    X(ErrorString, false)                          \
     // line intentionally blank
 
 /**
@@ -246,12 +254,19 @@ public:
         return m_SystemGetDriverVersion(version, length);
     }
 
+#if NVML_API_VERSION < 13
     nvmlReturn_t DeviceGetTemperature(const nvmlDevice_t &device,
                                       nvmlTemperatureSensors_t sensorType,
                                       unsigned int *temp) {
         ScopedTraceLog log{__func__};
         return m_DeviceGetTemperature(device, sensorType, temp);
     }
+#else
+    nvmlReturn_t DeviceGetTemperatureV(const nvmlDevice_t &device, nvmlTemperature_t *temperature) {
+        ScopedTraceLog log{__func__};
+        return m_DeviceGetTemperatureV(device, temperature);
+    }
+#endif
 
     nvmlReturn_t DeviceGetTemperatureThreshold(const nvmlDevice_t &device,
                                                nvmlTemperatureThresholds_t thresholdType,
@@ -286,11 +301,20 @@ public:
         return m_DeviceGetUtilizationRates(device, utilization);
     }
 
+#if NVML_API_VERSION < 13
     nvmlReturn_t DeviceGetCurrentClocksThrottleReasons(const nvmlDevice_t &device,
-                                                       unsigned long long *clocksThrottleReasons) {
+                                                       unsigned long long *clocksEventReasons) {
         ScopedTraceLog log{__func__};
-        return m_DeviceGetCurrentClocksThrottleReasons(device, clocksThrottleReasons);
+        return m_DeviceGetCurrentClocksThrottleReasons(device, clocksEventReasons);
     }
+#else
+
+    nvmlReturn_t DeviceGetCurrentClocksEventReasons(const nvmlDevice_t &device,
+                                                    unsigned long long *clocksEventReasons) {
+        ScopedTraceLog log{__func__};
+        return m_DeviceGetCurrentClocksEventReasons(device, clocksEventReasons);
+    }
+#endif
 
     nvmlReturn_t DeviceGetName(const nvmlDevice_t &device, char *name, unsigned int length) {
         ScopedTraceLog log{__func__};
@@ -381,15 +405,19 @@ void retrieve_and_assign_current_performance(NvmlApi *nvml,
     }
 }
 
-void retrieve_and_assign_current_throttling_reason(NvmlApi *nvml,
-                                                   const nvmlDevice_t &device,
-                                                   DeviceStatusInfo &info) {
+void retrieve_and_assign_current_clocks_event_reason(NvmlApi *nvml,
+                                                     const nvmlDevice_t &device,
+                                                     DeviceStatusInfo &info) {
     unsigned long long reason{};
+#if NVML_API_VERSION < 13
     auto result = nvml->DeviceGetCurrentClocksThrottleReasons(device, &reason);
+#else
+    auto result = nvml->DeviceGetCurrentClocksEventReasons(device, &reason);
+#endif
     if (result == NVML_SUCCESS) {
-        info.current_throttling_reason = reason;
+        info.current_clocks_event_reason = reason;
     } else {
-        info.current_throttling_reason_error = nvml->ErrorString(result);
+        info.current_clocks_event_reason_error = nvml->ErrorString(result);
     }
 }
 
@@ -397,7 +425,13 @@ void retrieve_and_assign_current_temperature(NvmlApi *nvml,
                                              const nvmlDevice_t &device,
                                              DeviceStatusInfo &info) {
     unsigned int value{};
+#if NVML_API_VERSION < 13
     auto result = nvml->DeviceGetTemperature(device, NVML_TEMPERATURE_GPU, &value);
+#else
+    nvmlTemperature_t temperature{};
+    auto result = nvml->DeviceGetTemperatureV(device, &temperature);
+    value = temperature.temperature;
+#endif
     if (result == NVML_SUCCESS) {
         info.current_temperature = value;
     } else {
@@ -462,7 +496,8 @@ class DeviceInfoCache final {
             auto device_ids = utils::split(cuda_visible_devices_env, ',');
             if (device_ids.size() > device_count) {
                 spdlog::error(
-                        "CUDA_VISIBLE_DEVICES={} specifies more device ids than the number of GPUs "
+                        "CUDA_VISIBLE_DEVICES={} specifies more device ids than the number of "
+                        "GPUs "
                         "present",
                         cuda_visible_devices_env);
                 throw std::runtime_error("Invalid device ids");
@@ -485,7 +520,8 @@ class DeviceInfoCache final {
                     unsigned int index = 0;
                     if (auto rc = m_nvml.m_DeviceGetIndex(device, &index); rc != NVML_SUCCESS) {
                         spdlog::warn(
-                                "Unable to retrieve index for GPU device '{}' - skipping further "
+                                "Unable to retrieve index for GPU device '{}' - skipping "
+                                "further "
                                 "device enumeration",
                                 id);
                         // stop parsing on error
@@ -502,7 +538,8 @@ class DeviceInfoCache final {
                         int index = std::stoi(id);
                         if (index < 0 || index >= static_cast<int>(device_count)) {
                             spdlog::warn(
-                                    "Invalid index '{}' for GPU device - skipping further device "
+                                    "Invalid index '{}' for GPU device - skipping further "
+                                    "device "
                                     "enumeration",
                                     index);
                             // stop parsing on invalid id
@@ -553,7 +590,8 @@ class DeviceInfoCache final {
 
         if (cuda_visible_devices_count > device_count) {
             spdlog::warn(
-                    "CUDA_VISIBLE_DEVICES contains more device ids ({}) than devices found by NVML "
+                    "CUDA_VISIBLE_DEVICES contains more device ids ({}) than devices found by "
+                    "NVML "
                     "({}).",
                     cuda_visible_devices_count, device_count);
         }
@@ -620,7 +658,7 @@ public:
         retrieve_and_assign_current_power_usage(&m_nvml, device, *info);
         retrieve_and_assign_utilization(&m_nvml, device, *info);
         retrieve_and_assign_current_performance(&m_nvml, device, *info);
-        retrieve_and_assign_current_throttling_reason(&m_nvml, device, *info);
+        retrieve_and_assign_current_clocks_event_reason(&m_nvml, device, *info);
 
         return info;
     }
