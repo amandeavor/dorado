@@ -1072,6 +1072,12 @@ void run_variant_calling(const Options& opt,
     if (!std::empty(opt.hemizygous_regions)) {
         hemizygous_regions =
                 resolve_input_regions(draft_lookup, bam_info.ref_seqs, opt.hemizygous_regions);
+        for (const auto& it : hemizygous_regions) {
+            for (const auto& it_inner : it) {
+                spdlog::debug("Added {} to hemizygous regions",
+                              secondary::region_to_string(it_inner));
+            }
+        }
     }
 
     // Load only reference sequences which are needed for the selected regions.
