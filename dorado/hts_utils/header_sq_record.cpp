@@ -6,9 +6,20 @@
 #include <spdlog/spdlog.h>
 
 #include <cstdint>
-#include <locale>
-#include <ranges>
+#include <numeric>
 #include <vector>
+
+namespace {
+const std::vector<unsigned char> to_upper = []() {
+    std::vector<unsigned char> lookup(256);
+    std::iota(std::begin(lookup), std::end(lookup), 0);
+    constexpr char offset = 'A' - 'a';
+    for (char i = 'a'; i <= 'z'; ++i) {
+        lookup[i] = i + offset;
+    }
+    return lookup;
+}();
+}  // namespace
 
 namespace dorado::utils {
 
@@ -30,14 +41,16 @@ MD5Generator::~MD5Generator() { hts_md5_destroy(m_ctx); }
 
 void MD5Generator::get_sequence_md5(MD5Hex& hex, std::string_view sequence) {
     hts_md5_reset(m_ctx);
-    const auto& posix_locale = std::locale::classic();
-    auto transformed_view =
-            sequence | std::views::filter([&posix_locale](char base) {
-                return std::isprint(base, posix_locale) && !std::isspace(base, posix_locale);
-            }) |
-            std::views::transform(
-                    [&posix_locale](char base) { return std::toupper(base, posix_locale); });
-    std::string transformed_sequence{transformed_view.begin(), transformed_view.end()};
+    std::string transformed_sequence(sequence.size(), 0);
+    for (size_t idx = 0; idx < sequence.size(); ++idx) {
+        transformed_sequence[idx] = to_upper[sequence[idx]];
+    }
+
+    std::erase_if(transformed_sequence, [](char base) {
+        unsigned char c = static_cast<unsigned char>(base);
+        return c < 33 || c > 126;
+    });
+
     hts_md5_update(m_ctx, transformed_sequence.data(),
                    static_cast<uint32_t>(transformed_sequence.size()));
     unsigned char digest[16];
