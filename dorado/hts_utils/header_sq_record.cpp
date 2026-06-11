@@ -6,6 +6,8 @@
 #include <spdlog/spdlog.h>
 
 #include <cstdint>
+#include <locale>
+#include <ranges>
 #include <vector>
 
 namespace dorado::utils {
@@ -28,7 +30,16 @@ MD5Generator::~MD5Generator() { hts_md5_destroy(m_ctx); }
 
 void MD5Generator::get_sequence_md5(MD5Hex& hex, std::string_view sequence) {
     hts_md5_reset(m_ctx);
-    hts_md5_update(m_ctx, sequence.data(), static_cast<uint32_t>(sequence.size()));
+    const auto& posix_locale = std::locale::classic();
+    auto transformed_view =
+            sequence | std::views::filter([&posix_locale](char base) {
+                return std::isprint(base, posix_locale) && !std::isspace(base, posix_locale);
+            }) |
+            std::views::transform(
+                    [&posix_locale](char base) { return std::toupper(base, posix_locale); });
+    std::string transformed_sequence{transformed_view.begin(), transformed_view.end()};
+    hts_md5_update(m_ctx, transformed_sequence.data(),
+                   static_cast<uint32_t>(transformed_sequence.size()));
     unsigned char digest[16];
     hts_md5_final(digest, m_ctx);
     hts_md5_hex(hex, digest);
