@@ -6,10 +6,16 @@
 #include "hts_utils/hts_file.h"
 #include "read_pipeline/nodes/HtsWriterNode.h"
 
+#include <catch2/benchmark/catch_benchmark.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 #include <htslib/sam.h>
+#include <spdlog/spdlog.h>
 
 #include <filesystem>
+#include <locale>
+#include <numeric>
+#include <ranges>
 
 #define TEST_GROUP "[alignment::Minimap2Index]"
 
@@ -257,4 +263,64 @@ CATCH_TEST_CASE(TEST_GROUP " Test md5 generates SAM compliant values", TEST_GROU
     CATCH_CHECK(modified_value == expected_value);
 }
 
+#if DORADO_ENABLE_BENCHMARK_TESTS
+// various implementations of the reference sequence conversion for SAM header MD5 hashing
+CATCH_TEST_CASE(TEST_GROUP " benchmark MD5 sequence conversion", TEST_GROUP) {
+    const auto length = GENERATE(100, 10'000, 1'000'000);
+    auto original_seq = generate_random_sequence_string(length);
+
+    auto with_std_funcs = [&] {
+        const auto& posix_locale = std::locale::classic();
+        auto transformed_view =
+                original_seq | std::views::filter([&posix_locale](char base) {
+                    return std::isprint(base, posix_locale) && !std::isspace(base, posix_locale);
+                }) |
+                std::views::transform(
+                        [&posix_locale](char base) { return std::toupper(base, posix_locale); });
+        return std::string{transformed_view.begin(), transformed_view.end()};
+    };
+
+    auto no_std_funcs = [&] {
+        auto transformed_view = original_seq | std::views::filter([](char base) {
+                                    unsigned char c = static_cast<unsigned char>(base);
+                                    return c >= 33 && c <= 126;
+                                }) |
+                                std::views::transform([](char base) {
+                                    unsigned char c = static_cast<unsigned char>(base);
+                                    if (c >= 'a' && c <= 'z') {
+                                        return static_cast<char>(c - 'a' + 'A');
+                                    }
+                                    return base;
+                                });
+        return std::string{transformed_view.begin(), transformed_view.end()};
+    };
+
+    std::vector<unsigned char> lookup(256);
+    std::iota(std::begin(lookup), std::end(lookup), 0);
+    constexpr char offset = 'A' - 'a';
+    for (char i = 'a'; i <= 'z'; ++i) {
+        lookup[i] = i + offset;
+    }
+    auto no_ranges = [&] {
+        std::string transformed_view(original_seq.size(), 0);
+
+        for (size_t idx = 0; idx < original_seq.size(); ++idx) {
+            transformed_view[idx] = lookup[original_seq[idx]];
+        }
+
+        std::erase_if(transformed_view, [](char base) {
+            unsigned char c = static_cast<unsigned char>(base);
+            return c < 33 || c > 126;
+        });
+
+        return transformed_view;
+    };
+
+    CATCH_BENCHMARK(fmt::format("with_std_funcs, {} bases", length)) { with_std_funcs(); };
+
+    CATCH_BENCHMARK(fmt::format("no_std_funcs, {} bases", length)) { no_std_funcs(); };
+
+    CATCH_BENCHMARK(fmt::format("no_ranges, {} bases", length)) { no_ranges(); };
+}
+#endif
 }  // namespace dorado::alignment::test
