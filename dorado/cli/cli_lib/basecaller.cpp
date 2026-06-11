@@ -837,6 +837,7 @@ void update_headers(std::span<std::string_view> args,
             // At present, header output file header writing relies on direct node method calls
             // rather than the pipeline framework - because we must guarantee that the header is set
             // BEFORE we write any reads.
+            cli::add_aligner_pg_hdr(hdr);
             const auto& aligner_ref = pipeline.get_node_ref<AlignerNode>(aligner_idx);
             utils::add_sq_hdr(hdr, aligner_ref.get_sequence_records_for_header());
         }

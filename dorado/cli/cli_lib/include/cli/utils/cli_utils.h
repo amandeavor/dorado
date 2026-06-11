@@ -16,6 +16,7 @@
 
 #include <argparse/argparse.hpp>
 #include <htslib/sam.h>
+#include <minimap.h>
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
@@ -57,6 +58,10 @@ inline std::pair<int, int> worker_vs_writer_thread_allocation(int available_thre
                        available_threads - 1);
     int aligner_threads = std::clamp(available_threads - writer_threads, 1, available_threads - 1);
     return std::make_pair(aligner_threads, writer_threads);
+}
+
+inline void add_aligner_pg_hdr(sam_hdr_t* hdr) {
+    sam_hdr_add_pg(hdr, "aligner", "PN", "dorado", "VN", DORADO_VERSION, "DS", MM_VERSION, nullptr);
 }
 
 inline void add_pg_hdr(sam_hdr_t* hdr,
