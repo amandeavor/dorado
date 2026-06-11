@@ -226,4 +226,35 @@ CATCH_TEST_CASE(TEST_GROUP " Test split index loading", TEST_GROUP) {
     }
 }
 
+CATCH_TEST_CASE(TEST_GROUP " Test md5 generates SAM compliant values", TEST_GROUP) {
+    constexpr int SEQ_LEN = 10000;
+    auto original_seq = generate_random_sequence_string(SEQ_LEN);
+
+    // modify the original sequence in ways that should be disregarded by the md5 generator
+    auto modified_seq = original_seq;
+    // change some values to lower case
+    for (int i = 0; i < 50; ++i) {
+        auto index = std::rand() % SEQ_LEN;
+        modified_seq[index] = std::tolower(static_cast<unsigned char>(modified_seq[index]));
+    }
+
+    // add some unprintable characters
+    for (int i = 0; i < 50; ++i) {
+        auto index = std::rand() % SEQ_LEN;
+        auto pos = std::begin(modified_seq);
+        std::advance(pos, index);
+        unsigned char nonprintable_char = 5;
+        modified_seq.insert(pos, nonprintable_char);
+    }
+    CATCH_REQUIRE(modified_seq != original_seq);
+
+    dorado::utils::MD5Generator md5gen;
+    MD5Hex hex;
+    md5gen.get_sequence_md5(hex, original_seq);
+    std::string expected_value{hex};
+    md5gen.get_sequence_md5(hex, modified_seq);
+    std::string modified_value{hex};
+    CATCH_CHECK(modified_value == expected_value);
+}
+
 }  // namespace dorado::alignment::test
