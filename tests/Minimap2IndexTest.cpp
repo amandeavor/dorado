@@ -295,32 +295,13 @@ CATCH_TEST_CASE(TEST_GROUP " benchmark MD5 sequence conversion", TEST_GROUP) {
         return std::string{transformed_view.begin(), transformed_view.end()};
     };
 
-    std::vector<unsigned char> lookup(256);
-    std::iota(std::begin(lookup), std::end(lookup), 0);
-    constexpr char offset = 'A' - 'a';
-    for (char i = 'a'; i <= 'z'; ++i) {
-        lookup[i] = i + offset;
-    }
-    auto no_ranges = [&] {
-        std::string transformed_view(original_seq.size(), 0);
-
-        for (size_t idx = 0; idx < original_seq.size(); ++idx) {
-            transformed_view[idx] = lookup[original_seq[idx]];
-        }
-
-        std::erase_if(transformed_view, [](char base) {
-            unsigned char c = static_cast<unsigned char>(base);
-            return c < 33 || c > 126;
-        });
-
-        return transformed_view;
-    };
-
     CATCH_BENCHMARK(fmt::format("with_std_funcs, {} bases", length)) { with_std_funcs(); };
 
     CATCH_BENCHMARK(fmt::format("no_std_funcs, {} bases", length)) { no_std_funcs(); };
 
-    CATCH_BENCHMARK(fmt::format("no_ranges, {} bases", length)) { no_ranges(); };
+    CATCH_BENCHMARK(fmt::format("MD5Generator::fast_md5_sequence_transform, {} bases", length)) {
+        MD5Generator::fast_sequence_transform(original_seq);
+    };
 }
 #endif
 }  // namespace dorado::alignment::test
