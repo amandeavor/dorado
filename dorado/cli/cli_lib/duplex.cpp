@@ -651,6 +651,7 @@ int duplex(int argc, char* argv[]) {
             // At present, header output file header writing relies on direct node method calls
             // rather than the pipeline framework.
             if (!ref.empty()) {
+                cli::add_aligner_pg_hdr(hdr.get());
                 const auto& aligner_ref = pipeline->get_node_ref<AlignerNode>(aligner);
                 utils::add_sq_hdr(hdr.get(), aligner_ref.get_sequence_records_for_header());
             }

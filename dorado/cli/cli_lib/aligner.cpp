@@ -74,10 +74,6 @@ std::shared_ptr<dorado::alignment::BedFileAccess> load_bed(const std::string& fi
     return bed_file_access;
 }
 
-void add_pg_hdr(sam_hdr_t* hdr) {
-    sam_hdr_add_pg(hdr, "aligner", "PN", "dorado", "VN", DORADO_VERSION, "DS", MM_VERSION, nullptr);
-}
-
 }  // namespace
 
 namespace dorado {
@@ -334,7 +330,7 @@ int aligner(int argc, char* argv[]) {
     // Construct the output headers map
     const auto& aligner_ref = pipeline->get_node_ref<AlignerNode>(aligner_node);
     auto modify_hdr = utils::HeaderMapper::Modifier([&aligner_ref](sam_hdr_t* hdr) {
-        add_pg_hdr(hdr);
+        cli::add_aligner_pg_hdr(hdr);
         utils::add_hd_header_line(hdr);
         utils::add_sq_hdr(hdr, aligner_ref.get_sequence_records_for_header());
     });
