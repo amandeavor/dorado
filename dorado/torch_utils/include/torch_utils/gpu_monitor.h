@@ -19,10 +19,10 @@ struct DeviceStatusInfo {
     std::optional<std::string> device_name;
     std::string device_name_error;
 
-    // Bit mask representing causes of any current throttling of the device.
-    // See NVML documentation for further information on nvmlClocksThrottleReasons
-    std::optional<unsigned long long> current_throttling_reason;
-    std::string current_throttling_reason_error;
+    // Bit mask representing causes of any current events of the device.
+    // See NVML documentation for further information on nvmlClocksEventReasons
+    std::optional<unsigned long long> current_clocks_event_reason;
+    std::string current_clocks_event_reason_error;
 
     std::optional<unsigned int> current_temperature;
     std::string current_temperature_error;

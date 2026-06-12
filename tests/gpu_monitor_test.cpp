@@ -294,7 +294,7 @@ DEFINE_TEST_FIXTURE_METHOD(
 }
 
 DEFINE_TEST_FIXTURE_METHOD(
-        "get_device_status_info with valid device returns with current_throttling_reason in "
+        "get_device_status_info with valid device returns with current_event_reason in "
         "range") {
     if (!first_accessible_device) {
         return;
@@ -304,9 +304,9 @@ DEFINE_TEST_FIXTURE_METHOD(
     // N.B. test may fail has_value() check if a CI runner GPU does not support an nvml query
     // in which case consider rewriting the specific test to pass if the optional is not set
     CATCH_REQUIRE(info.has_value());
-    CATCH_CAPTURE(info->current_throttling_reason_error);
-    CATCH_REQUIRE(info->current_throttling_reason.has_value());
-    CATCH_CHECK(*info->current_throttling_reason <= 0x1000ULL);
+    CATCH_CAPTURE(info->current_event_reason_error);
+    CATCH_REQUIRE(info->current_event_reason_error.has_value());
+    CATCH_CHECK(*info->current_event_reason_error <= 0x1000ULL);
 }
 #endif  // DORADO_ORIN
 
