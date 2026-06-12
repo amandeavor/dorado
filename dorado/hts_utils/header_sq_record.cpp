@@ -5,13 +5,13 @@
 #include <htslib/sam.h>
 #include <spdlog/spdlog.h>
 
+#include <array>
 #include <cstdint>
 #include <numeric>
-#include <vector>
 
 namespace {
-const std::vector<unsigned char> to_upper = []() {
-    std::vector<unsigned char> lookup(256);
+constexpr std::array to_upper = []() {
+    std::array<unsigned char, 256> lookup;
     std::iota(std::begin(lookup), std::end(lookup), 0);
     constexpr char offset = 'A' - 'a';
     for (char i = 'a'; i <= 'z'; ++i) {
