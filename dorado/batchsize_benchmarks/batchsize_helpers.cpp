@@ -44,21 +44,11 @@ int pick_best_batch_size(std::span<const SpeedEntry> speeds,
                 fmt::format("No entries remaining after applying memory_limit ({})", memory_limit));
     }
 
-    const auto compare_less = [](const SpeedEntry & lhs, const SpeedEntry & rhs) {
-        // Slower speed is worse.
-        if (lhs.basecall_speed != rhs.basecall_speed) {
-            return lhs.basecall_speed < rhs.basecall_speed;
-        }
-        // Larger batch size is worse.
-        if (lhs.batch_size != rhs.batch_size) {
-            return lhs.batch_size > rhs.batch_size;
-        }
-        // Larger memory is worse.
-        return lhs.memory_used > rhs.memory_used;
-    };
-
     // Grab the fastest entry.
-    const auto fastest_entry = std::ranges::max_element(entries_below_memory_limit, compare_less);
+    const auto compare_speed = [](const SpeedEntry & lhs, const SpeedEntry & rhs) {
+        return lhs.basecall_speed < rhs.basecall_speed;
+    };
+    const auto fastest_entry = std::ranges::max_element(entries_below_memory_limit, compare_speed);
     if (fastest_entry == entries_below_memory_limit.end()) {
         // |entries_below_memory_limit| isn't empty so there should be a max element.
         throw std::logic_error("max_element() of non-empty container doesn't exist");
