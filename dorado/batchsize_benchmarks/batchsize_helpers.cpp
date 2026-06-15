@@ -37,34 +37,42 @@ int pick_best_batch_size(std::span<const SpeedEntry> speeds,
     const auto is_below_memory_limit = [memory_limit](const SpeedEntry & entry) {
         return entry.memory_used <= memory_limit;
     };
-    auto entries_below_memory_limit =
+    const auto entries_below_memory_limit =
             to<std::vector>(speeds | std::views::filter(is_below_memory_limit));
     if (entries_below_memory_limit.empty()) {
         throw std::runtime_error(
                 fmt::format("No entries remaining after applying memory_limit ({})", memory_limit));
     }
 
-    // Sort the entries so that we can search through them for the first "best" entry.
-    const auto compare_better = [](const SpeedEntry & lhs, const SpeedEntry & rhs) {
-        // The order of these represents priority, ie basecall_speed is the most important.
-        return std::tie(lhs.basecall_speed, lhs.memory_used, lhs.batch_size) <
-               std::tie(rhs.basecall_speed, rhs.memory_used, rhs.batch_size);
+    const auto compare_less = [](const SpeedEntry & lhs, const SpeedEntry & rhs) {
+        // Slower speed is worse.
+        if (lhs.basecall_speed != rhs.basecall_speed) {
+            return lhs.basecall_speed < rhs.basecall_speed;
+        }
+        // Larger batch size is worse.
+        if (lhs.batch_size != rhs.batch_size) {
+            return lhs.batch_size > rhs.batch_size;
+        }
+        // Larger memory is worse.
+        return lhs.memory_used > rhs.memory_used;
     };
-    std::ranges::sort(entries_below_memory_limit, compare_better);
 
-    // The fastest speed will be at the back.
-    const auto fastest_entry = entries_below_memory_limit.back();
+    // Grab the fastest entry.
+    const auto fastest_entry = std::ranges::max_element(entries_below_memory_limit, compare_less);
+    if (fastest_entry == entries_below_memory_limit.end()) {
+        // |entries_below_memory_limit| isn't empty so there should be a max element.
+        throw std::logic_error("max_element() of non-empty container doesn't exist");
+    }
 
     // Apply the time penalty.
     // TODO: the existing time_penalty code seems odd since 3 is half of 1 is half of 0.
     // TODO: would |speed * (1 - speed_penalty)| be better?
-    const double threshold_speed = fastest_entry.basecall_speed / (1.0 + time_penalty);
-    const auto under_threshold = [](const SpeedEntry & entry, double speed) {
-        return entry.basecall_speed < speed;
+    const double threshold_speed = fastest_entry->basecall_speed / (1.0 + time_penalty);
+    const auto over_threshold = [threshold_speed](const SpeedEntry & entry) {
+        return entry.basecall_speed >= threshold_speed;
     };
-    const auto first_over_threshold =
-            std::lower_bound(entries_below_memory_limit.begin(), entries_below_memory_limit.end(),
-                             threshold_speed, under_threshold);
+    const auto first_over_threshold = std::find_if(
+            entries_below_memory_limit.begin(), entries_below_memory_limit.end(), over_threshold);
     if (first_over_threshold == entries_below_memory_limit.end()) {
         // This should be impossible since the fastest speed should be over the threshold.
         throw std::logic_error("Error in batch size selection");
