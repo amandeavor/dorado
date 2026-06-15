@@ -42,14 +42,14 @@ DEFINE_TEST("Basic test") {
     CATCH_CHECK(pick_best_batch_size(span.subspan<2, 1>(), NO_MEMORY_LIMIT, NO_TIME_PENALTY) == 7);
 }
 
-DEFINE_TEST("Entries with the same speed picks smallest memory usage") {
+DEFINE_TEST("Entries with the same speed picks smallest batch size") {
     const SpeedEntry entries[]{
             {.batch_size = 1, .basecall_speed = 5, .memory_used = 10},
             {.batch_size = 2, .basecall_speed = 5, .memory_used = 9},
             {.batch_size = 3, .basecall_speed = 5, .memory_used = 11},
     };
 
-    CATCH_CHECK(pick_best_batch_size(entries, NO_MEMORY_LIMIT, NO_TIME_PENALTY) == 2);
+    CATCH_CHECK(pick_best_batch_size(entries, NO_MEMORY_LIMIT, NO_TIME_PENALTY) == 1);
 }
 
 DEFINE_TEST("memory_limit is enforced") {
