@@ -1,6 +1,7 @@
 #include "batchsize_helpers.h"
 
 #include "SpeedEntry.h"
+#include "compiled_timings.h"
 
 #include <spdlog/spdlog.h>
 
@@ -28,6 +29,8 @@ int pick_best_batch_size(std::span<const SpeedEntry> speeds,
                          float time_penalty) {
     if (speeds.empty()) {
         throw std::logic_error("Empty span passed to batch size selection");
+    } else if (!compiled_cache::is_sorted(speeds)) {
+        throw std::runtime_error("Speeds must be sorted");
     }
 
     // Filter entries to those that fit in memory.
