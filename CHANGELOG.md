@@ -2,6 +2,20 @@
 
 All notable changes to Dorado will be documented in this file.
 
+# [2.0.1] (15 June 2026)
+
+This version of Dorado introduces fixes and enhancements following the Dorado 2.0.0 release. Improvements include adding a `@PG ID:aligner` header line from Dorado `basecaller`, allowing Dorado `smallvar` to consume reads aligned inline with `basecaller`; preventing unnecessary poly(A) worker threads and improving poly(A) thread count determination; initial Apple Silicon implementation for v6.0.0 HAC on MacOS; pre-computed batch size benchmarks for a wider variety of GPUs; and several other fixes improving compatibility with v6.0.0 models.
+
+* 2ab1fc1427f2c3f09acb8fd1029f21f3963e5567 - Dorado `basecaller` command now adds a `@PG ID:aligner` header line
+* 242635d32bfcd4531dc23f3a420c66122f3f6533 - Fix "bad any_cast" error when using `modified-bases-threshold` argument
+* fcacebeca5fd2f7cae99c2d56648d3a2fd7d9f5e - Fix Dorado `duplex` command when running DNA HAC v6.0.0 model
+* c759689141059536ec892e0e86a9847dc72542cc - Fix MD5 sums for M5 tags to conform to the SAM spec
+* cc2eed24bbfbcbdf7796d53050a3acdc7843eb0d - Only create poly(A) worker threads when poly(A) estimation is enabled
+* fa50e60da990c4bfb0698e4fd96f5af499e2c68e - Add initial MPS backend implementation for v6.0.0 HAC on MacOS
+* 44e9a59ae147a3aa90707d4a5d90ed6696d5022b - Add pre-computed batch size benchmarks for Quadro GV100
+* 728b1a7416164a933c4215f416295fee819fa2a9 - Add pre-computed batch size benchmarks for RTX PRO 6000 variants, H100 PCIe, RTX A6000, RTX 5070 Ti and RTX 5090.
+* d1725d9ad9541e76711749b633c073775f0f2e34 - Fix a crash when running v6.0.0 HAC models on Win/Linux hosts that do not have NVIDIA drivers installed, when using CPU mode.
+
 # [2.0.0] (20 May 2026)
 
 This major release of Dorado includes new v6.0 basecalling models for DNA and RNA, state-of-the-art small variant calling capabilities with Dorado `smallvar` (formerly Dorado `variant`), and a range of other performance, usability, and stability improvements. This release introduces:
