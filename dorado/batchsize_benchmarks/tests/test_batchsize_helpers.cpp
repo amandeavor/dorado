@@ -42,14 +42,14 @@ DEFINE_TEST("Basic test") {
     CATCH_CHECK(pick_best_batch_size(span.subspan<2, 1>(), NO_MEMORY_LIMIT, NO_TIME_PENALTY) == 7);
 }
 
-DEFINE_TEST("Entries with the same speed picks smallest memory usage") {
+DEFINE_TEST("Entries with the same speed picks smallest batch size") {
     const SpeedEntry entries[]{
             {.batch_size = 1, .basecall_speed = 5, .memory_used = 10},
             {.batch_size = 2, .basecall_speed = 5, .memory_used = 9},
             {.batch_size = 3, .basecall_speed = 5, .memory_used = 11},
     };
 
-    CATCH_CHECK(pick_best_batch_size(entries, NO_MEMORY_LIMIT, NO_TIME_PENALTY) == 2);
+    CATCH_CHECK(pick_best_batch_size(entries, NO_MEMORY_LIMIT, NO_TIME_PENALTY) == 1);
 }
 
 DEFINE_TEST("memory_limit is enforced") {
@@ -106,6 +106,35 @@ DEFINE_TEST("memory_limit and time_penalty is enforced") {
     CATCH_CHECK(pick_best_batch_size(entries, 300, penalty_factor(0)) == 2);
     // Penalty is applied after the memory limit is applied, not in total.
     CATCH_CHECK(pick_best_batch_size(entries, 300, penalty_factor(0.5)) == 1);
+}
+
+DEFINE_TEST("time_penalty picks first entry over penalty, by batch size not speed") {
+    constexpr float time_penalty = 0.32f;
+
+    // Seen in real world data with fastest=854:
+    // 854 / (1 + 0.32) = 647
+    // So first batch size over is 709, but first speed over is 648.
+    const SpeedEntry entries[]{
+            {.batch_size = 10, .basecall_speed = 643, .memory_used = 102},
+            {.batch_size = 20, .basecall_speed = 599, .memory_used = 106},
+            {.batch_size = 30, .basecall_speed = 709, .memory_used = 110},  // first, by batch size
+            {.batch_size = 40, .basecall_speed = 642, .memory_used = 114},
+            {.batch_size = 50, .basecall_speed = 741, .memory_used = 117},
+            {.batch_size = 60, .basecall_speed = 687, .memory_used = 122},
+            {.batch_size = 70, .basecall_speed = 769, .memory_used = 125},
+            {.batch_size = 80, .basecall_speed = 689, .memory_used = 130},
+            {.batch_size = 90, .basecall_speed = 793, .memory_used = 133},
+            {.batch_size = 100, .basecall_speed = 753, .memory_used = 137},
+            {.batch_size = 110, .basecall_speed = 818, .memory_used = 141},
+            {.batch_size = 120, .basecall_speed = 656, .memory_used = 156},
+            {.batch_size = 130, .basecall_speed = 648, .memory_used = 161},  // first, by speed
+            {.batch_size = 140, .basecall_speed = 663, .memory_used = 164},
+            {.batch_size = 150, .basecall_speed = 678, .memory_used = 168},
+            {.batch_size = 160, .basecall_speed = 854, .memory_used = 281},  // best, no penalty
+    };
+
+    CATCH_CHECK(pick_best_batch_size(entries, NO_MEMORY_LIMIT, NO_TIME_PENALTY) == 160);
+    CATCH_CHECK(pick_best_batch_size(entries, NO_MEMORY_LIMIT, time_penalty) == 30);
 }
 
 }  // namespace
