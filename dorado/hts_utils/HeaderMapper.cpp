@@ -386,7 +386,8 @@ void HeaderMapper::add_barcodes() {
         const auto& kit_info_map = barcode_kits::get_kit_infos();
         const auto& kit_info = kit_info_map.at(*m_kit_name);
 
-        auto add_bc_header = [&](const std::string& barcode_name,
+        auto add_bc_header = [&](const std::string& outer_barcode_name,
+                                 const std::string& inner_barcode_name,
                                  const std::string& normalized_barcode_name,
                                  const std::string& standard_barcode_name) {
             std::string alias;
@@ -413,11 +414,15 @@ void HeaderMapper::add_barcodes() {
             auto new_read_group_id =
                     read_group_id + "_" + (alias.empty() ? standard_barcode_name : alias);
             if (!read_group_id.empty()) {
+                auto barcode_sequence = get_barcode_sequence(outer_barcode_name);
+                if (!inner_barcode_name.empty()) {
+                    barcode_sequence += "-" + get_barcode_sequence(inner_barcode_name);
+                }
                 sam_hdr_update_line(header.get(), "RG", "ID", read_group_id.c_str(), "SM",
                                     normalized_barcode_name.c_str(), "al",
                                     alias.empty() ? normalized_barcode_name.c_str() : alias.c_str(),
                                     "ID", new_read_group_id.c_str(), "bk", m_kit_name->c_str(),
-                                    "BC", get_barcode_sequence(barcode_name).c_str(), nullptr);
+                                    "BC", barcode_sequence.c_str(), nullptr);
             }
             rg_to_attrs_lut[new_read_group_id] = read_attrs;
 
@@ -431,14 +436,13 @@ void HeaderMapper::add_barcodes() {
             const auto standard_barcode_name =
                     barcode_kits::generate_standard_barcode_name(*m_kit_name, barcode_name);
             if (kit_info.barcodes_inner1.empty()) {
-                add_bc_header(barcode_name, normalized_barcode_name, standard_barcode_name);
+                add_bc_header(barcode_name, "", normalized_barcode_name, standard_barcode_name);
             } else {
                 for (const auto& inner_barcode_name : kit_info.barcodes_inner1) {
                     const auto normalized_inner_barcode_name =
                             barcode_kits::normalize_barcode_name(inner_barcode_name);
                     // Note that we don't include the barcode kit again in the standard barcode name for dual.
-
-                    add_bc_header(std::string(barcode_name).append("_").append(inner_barcode_name),
+                    add_bc_header(barcode_name, inner_barcode_name,
                                   std::string(normalized_barcode_name)
                                           .append("_")
                                           .append(normalized_inner_barcode_name),
