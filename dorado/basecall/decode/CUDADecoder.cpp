@@ -37,7 +37,7 @@ DecodeData CUDADecoder::beam_search_part_1(DecodeData data) const {
     at::Tensor chunk_results;
     if (data.aux) {
         std::int32_t N_;
-        if (data.aux->is_lstm_model()) {
+        if (data.aux->is_lstm_or_flstm_model()) {
             N_ = std::max<std::int32_t>(N, data.aux->N() * 4);
         } else {
             // N IS TOTAL_NUM_VARLEN_CHUNKS
@@ -67,7 +67,7 @@ DecodeData CUDADecoder::beam_search_part_1(DecodeData data) const {
     at::Tensor moves_sequence_qstring;
     if (data.aux &&
         (data.aux->device_in_layout.defined() || data.aux->device_chunk_table.defined())) {
-        if (data.aux->is_lstm_model()) {
+        if (data.aux->is_lstm_or_flstm_model()) {
             // lstm VCS
             const std::int32_t T_ = data.aux->NT_out_max();
             const std::int32_t Ts_ = std::max<std::int32_t>(T_ + (data.aux->N() * 4), T + N);

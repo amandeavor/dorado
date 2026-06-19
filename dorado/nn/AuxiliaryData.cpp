@@ -26,7 +26,7 @@ AuxiliaryData::AuxiliaryData(at::Tensor workspace,
                              const std::int32_t chunk_size_granularity,
                              const std::span<const std::int32_t> chunk_sizes,
                              const std::int32_t max_chunk_size,
-                             const bool is_lstm_model)
+                             const bool is_tx_model)
         : workspace_(std::move(workspace)),
           N_(batch_size),
           T_in_(chunk_size),
@@ -36,7 +36,7 @@ AuxiliaryData::AuxiliaryData(at::Tensor workspace,
           chunk_sizes_(std::cbegin(chunk_sizes), std::cend(chunk_sizes)),
           chunk_size_granularity_(chunk_size_granularity),
           max_chunk_size_(max_chunk_size),
-          is_lstm_model_(is_lstm_model) {
+          is_tx_model_(is_tx_model) {
     T_lstm_ += T_lstm_ & 1;  // needs to be even for easier LUT creation
 
     total_num_varlen_chunks_ = std::ssize(chunk_sizes_);
@@ -69,14 +69,13 @@ void AuxiliaryData::restore_convolution_auxiliary_data() {
 }
 
 void AuxiliaryData::create_auxiliary_data([[maybe_unused]] const c10::Device& device,
-                                          [[maybe_unused]] KoiThreads& thread_pool,
-                                          bool is_lstm_model) {
+                                          [[maybe_unused]] KoiThreads& thread_pool) {
 #if DORADO_CUDA_BUILD
 
     auto cpu_options = at::TensorOptions().dtype(at::kInt);
     auto gpu_options = cpu_options.device(device);
 
-    if (is_lstm_model) {
+    if (is_lstm_or_flstm_model()) {
         if (device_in_layout.defined()) {
             return;
         }
@@ -111,8 +110,7 @@ void AuxiliaryData::create_auxiliary_data([[maybe_unused]] const c10::Device& de
                         .to(gpu_options);
 
         device_chunk_table =
-                at::from_blob(std::data(chunk_table_),
-                              {static_cast<std::int32_t>(std::size(chunk_table_))}, cpu_options)
+                at::from_blob(std::data(chunk_table_), {total_num_varlen_chunks_, 2}, cpu_options)
                         .to(gpu_options);
     } else {
         if (conv_load_lut.defined() || conv_store_lut.defined() || qkv_rope_lut.defined()) {
@@ -141,10 +139,8 @@ void AuxiliaryData::create_auxiliary_data([[maybe_unused]] const c10::Device& de
         // So with lut being zeros, these padded blocks will calculate sincos as if they were T = 0
 
         device_chunk_table =
-                at::from_blob(std::data(chunk_table_),
-                              {static_cast<std::int32_t>(std::size(chunk_table_))}, cpu_options)
+                at::from_blob(std::data(chunk_table_), {total_num_varlen_chunks_, 2}, cpu_options)
                         .mul_(chunk_size_granularity_)
-                        .view({total_num_varlen_chunks_, 2})
                         .to(gpu_options);
     }
 #else

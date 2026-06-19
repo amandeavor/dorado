@@ -58,28 +58,29 @@ std::unique_ptr<nn::AuxiliaryData> create_empty_input(at::Tensor &in,
                                                       at::Tensor &workspace,
                                                       const std::int32_t N,
                                                       const std::int32_t T,
-                                                      const std::int32_t C,
-                                                      const std::int32_t stride,
-                                                      const std::int32_t chunk_size_granularity,
-                                                      const std::int32_t max_chunk_size,
-                                                      const bool is_lstm_model,
+                                                      const config::BasecallModelConfig &config,
                                                       nn::KoiThreads &thread_pool) {
-    if (is_lstm_model) {
+    const std::int32_t C = config.num_features;
+    const std::int32_t stride = config.stride;
+    const std::int32_t chunk_size_granularity = config.chunk_size_granularity();
+    const std::int32_t max_chunk_size = config.basecaller.chunk_size();
+    const bool is_tx_model = config.is_tx_model();
+    if (is_tx_model) {
+        // This is absolute worse-case scenario, where all reads are <= chunk_size_granularity
+        assert((T % chunk_size_granularity) == 0);
+        in = torch::empty({C, (N * T) + (N * (T / chunk_size_granularity) * 4)}, in_options);
+    } else {
         in = torch::empty({1, C, N * T}, in_options);
         auto workspace_options =
                 at::TensorOptions().device(torch::kCPU).pinned_memory(true).dtype(torch::kInt32);
         // for workspace size see koi/utils_lstm.h
         workspace = torch::empty({6 * ((T / stride) + 3) * N}, workspace_options);
-    } else {
-        // This is absolute worse-case scenario, where all reads are <= chunk_size_granularity
-        assert((T % chunk_size_granularity) == 0);
-        in = torch::empty({C, (N * T) + (N * (T / chunk_size_granularity) * 4)}, in_options);
     }
 
     auto aux = std::make_unique<nn::AuxiliaryData>(workspace, N, T, stride, chunk_size_granularity,
                                                    std::vector<std::int32_t>(N, T), max_chunk_size,
-                                                   is_lstm_model);
-    aux->create_auxiliary_data(in_options.device(), thread_pool, is_lstm_model);
+                                                   is_tx_model);
+    aux->create_auxiliary_data(in_options.device(), thread_pool);
     return aux;
 }
 
@@ -165,10 +166,8 @@ CudaCaller::CudaCaller(const BasecallerCreationParams &params)
         at::Tensor workspace;
         std::unique_ptr<nn::AuxiliaryData> aux;
         if (m_variable_chunk_sizes) {
-            aux = create_empty_input(
-                    input, m_options, workspace, batch_dim.N, batch_dim.T_in, m_num_input_features,
-                    m_config.stride, m_config.chunk_size_granularity(),
-                    m_config.basecaller.chunk_size(), m_config.is_lstm_model(), m_thread_pool);
+            aux = create_empty_input(input, m_options, workspace, batch_dim.N, batch_dim.T_in,
+                                     m_config, m_thread_pool);
         } else {
             input = torch::empty({batch_dim.N, m_num_input_features, batch_dim.T_in}, m_options);
         }
@@ -260,7 +259,7 @@ std::vector<decode::DecodedChunk> CudaCaller::call_chunks(at::Tensor &input,
     at::Tensor device_input = input.to(m_options.device());  // async copy
 
     if (aux) {
-        aux->create_auxiliary_data(m_options.device(), m_thread_pool, m_config.is_lstm_model());
+        aux->create_auxiliary_data(m_options.device(), m_thread_pool);
     }
 
     auto &task_queue = get_task_queue();
@@ -588,9 +587,7 @@ void CudaCaller::determine_batch_dims(const BasecallerCreationParams &params,
             std::unique_ptr<nn::AuxiliaryData> aux;
             if (m_variable_chunk_sizes) {
                 aux = create_empty_input(input, m_options, workspace, batch_size, chunk_size,
-                                         m_config.num_features, stride, chunk_granularity,
-                                         m_config.basecaller.chunk_size(), m_config.is_lstm_model(),
-                                         m_thread_pool);
+                                         m_config, m_thread_pool);
             } else {
                 input = torch::empty({batch_size, m_config.num_features, chunk_size}, m_options);
             }

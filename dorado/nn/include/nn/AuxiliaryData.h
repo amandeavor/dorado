@@ -20,7 +20,7 @@ public:
                   std::int32_t chunk_size_granularity_,
                   std::span<const std::int32_t> chunk_sizes,
                   const std::int32_t max_chunk_size,
-                  bool is_lstm_model);
+                  bool is_tx_model);
 
     std::int32_t N() const { return N_; }
     std::int32_t T_in() const { return T_in_; }
@@ -35,6 +35,8 @@ public:
 
     at::Tensor device_chunk_intervals;
     bool is_lstm_model() const { return is_lstm_model_; }
+    bool is_tx_model() const { return is_tx_model_; }
+    bool is_lstm_or_flstm_model() const { return !is_tx_model_; }
     std::int32_t chunk_size_granularity() const { return chunk_size_granularity_; }
     std::int32_t total_num_granularity() const { return total_num_granularity_; }
     std::int32_t total_num_varlen_chunks() const { return total_num_varlen_chunks_; }
@@ -44,9 +46,7 @@ public:
         chunk_size_granularity_ /= stride;
     }
 
-    void create_auxiliary_data(const c10::Device& device,
-                               KoiThreads& thread_pool,
-                               bool is_lstm_model);
+    void create_auxiliary_data(const c10::Device& device, KoiThreads& thread_pool);
 
     at::Tensor device_in_layout;
     at::Tensor device_out_layout;
@@ -81,7 +81,7 @@ private:
             max_num_granularity_;  // Given CudaCaller's batch_size and chunk_size, max amount of granularity chunks
     std::int32_t max_chunk_size_;  // Acquired from model's config "[basecaller] chunksize"
 
-    bool is_lstm_model_;
+    bool is_tx_model_;
 };
 
 }  // namespace dorado::nn
