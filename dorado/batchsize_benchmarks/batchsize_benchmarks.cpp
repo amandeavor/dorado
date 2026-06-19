@@ -94,6 +94,8 @@ SpeedEntry calculate_one(const std::string &device,
     // TODO: implement the interface and reuse the cuda path
 #endif
 
+    const auto thread_allocs = utils::default_thread_allocations(1, 0, false, false, false, false);
+
     // Build a benchmarking pipeline.
     PipelineDescriptor descriptor;
     const NodeHandle sink_handle = descriptor.add_node<BenchmarkSink>({});
@@ -105,7 +107,8 @@ SpeedEntry calculate_one(const std::string &device,
     // We need to feed in the data on a separate thread since it'll block.
     std::atomic<bool> finished_data{false};
     auto source = utils::jthread([&] {
-        data_loader::DataLoader loader(*pipeline, device, 1, 0, std::nullopt, {});
+        data_loader::DataLoader loader(*pipeline, device, thread_allocs.loader_threads, 0,
+                                       std::nullopt, {});
         loader.load_reads(input_files, ReadOrder::UNRESTRICTED);
         finished_data.store(true, std::memory_order_relaxed);
     });
