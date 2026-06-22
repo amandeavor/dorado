@@ -252,8 +252,8 @@ $dorado_bin basecaller $model_5k_v43 $data_dir/split/INSTX-5275 ${models_directo
 
 if [[ -z "$SAMTOOLS_UNAVAILABLE" ]]; then
     # Check DOR-1569 - read splits that trigger multiple splitters create non-overlapping ranges of [sp, sp + ts + ns)
-    # n.b. this read only triggers both splitters when run with the sup@v5.2.0 model
-    $dorado_bin basecaller sup@v5.2.0 $data_dir/split/DOR-1569 ${models_directory_arg} -b ${batch} > $output_dir/DOR-1569.bam
+    # n.b. this read only triggers both splitters when run with the sup@v5.2.0 model, so we manually lower the batch size
+    $dorado_bin basecaller sup@v5.2.0 $data_dir/split/DOR-1569 ${models_directory_arg} -b 32 > $output_dir/DOR-1569.bam
     "$(dirname "${BASH_SOURCE[0]}")/validate_split_bam.sh" ${output_dir}/DOR-1569.bam
 fi
 
