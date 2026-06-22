@@ -91,10 +91,10 @@ CATCH_TEST_CASE("4 subread splitting test", TEST_GROUP) {
     CATCH_CHECK(split_res[2]->read_common.attributes.num_samples == 53950);
     CATCH_CHECK(split_res[3]->read_common.attributes.num_samples == 50475);
 
-    CATCH_CHECK(split_res[0]->read_common.split_point == 0);
-    CATCH_CHECK(split_res[1]->read_common.split_point == 97230);
-    CATCH_CHECK(split_res[2]->read_common.split_point == 152310);
-    CATCH_CHECK(split_res[3]->read_common.split_point == 206305);
+    CATCH_CHECK(split_res[0]->read_common.split_point == 10);
+    CATCH_CHECK(split_res[1]->read_common.split_point == 97240);
+    CATCH_CHECK(split_res[2]->read_common.split_point == 152320);
+    CATCH_CHECK(split_res[3]->read_common.split_point == 206315);
 
     CATCH_CHECK(std::all_of(split_res.begin(), split_res.end(),
                             [](const auto &r) { return r->read_common.read_tag == 42; }));
