@@ -63,6 +63,8 @@ variables:
     - ubuntu-20.04
     - nvidia-docker
     - on-prem
+  variables:
+    GIT_STRATEGY: clone   # temp hack due to https://gitlab.com/gitlab-org/gitlab-runner/-/work_items/38908 issues
 
 .linux_arm64_runner:
   tags:
