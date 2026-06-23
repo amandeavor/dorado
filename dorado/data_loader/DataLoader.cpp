@@ -624,13 +624,11 @@ static void on_worker_start() {
 }
 
 DataLoader::DataLoader(Pipeline& pipeline,
-                       const std::string& device,
                        size_t num_worker_threads,
                        size_t max_reads,
                        std::optional<std::unordered_set<std::string>> read_list,
                        std::unordered_set<std::string> read_ignore_list)
         : m_pipeline(pipeline),
-          m_device(device),
           m_thread_pool(num_worker_threads, on_worker_start),
           m_allowed_read_ids(std::move(read_list)),
           m_ignored_read_ids(std::move(read_ignore_list)) {

@@ -47,7 +47,6 @@ std::vector<T> ConvertMessages(std::vector<dorado::Message>&& messages) {
 }
 
 inline size_t CountSinkReads(const std::filesystem::path& data_path,
-                             const std::string& device,
                              size_t num_worker_threads,
                              size_t max_reads,
                              std::optional<std::unordered_set<std::string>> read_list,
@@ -57,7 +56,7 @@ inline size_t CountSinkReads(const std::filesystem::path& data_path,
     pipeline_desc.add_node<MessageSinkToVector>({}, 100, messages);
     auto pipeline = dorado::Pipeline::create(std::move(pipeline_desc), nullptr);
 
-    dorado::data_loader::DataLoader loader(*pipeline, device, num_worker_threads, max_reads,
+    dorado::data_loader::DataLoader loader(*pipeline, num_worker_threads, max_reads,
                                            std::move(read_list), std::move(read_ignore_list));
 
     auto input_pod5_files = dorado::data_loader::InputFiles::search_pod5s(data_path, false);
