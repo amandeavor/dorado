@@ -800,6 +800,18 @@ if [[ -z "$SAMTOOLS_UNAVAILABLE" ]]; then
     fi
 fi
 
+title dorado custom demux dual barcode single end split context test stage
+$dorado_bin demux $data_dir/barcode_demux/dual/single_split.fastq --output-dir $output_dir/dual_single_split --kit-name EXP-SPLIT --barcode-arrangement $data_dir/barcode_demux/custom_barcodes/dual_arr_split.toml --barcode-sequences $data_dir/barcode_demux/custom_barcodes/dual_arr_split.fasta
+if [[ -z "$SAMTOOLS_UNAVAILABLE" ]]; then
+    expected_path="$output_dir/dual_single_split/no_sample/19700101_0000_0_UNKNOWN_06f09823/bam_pass/barcode02_barcode02/UNKNOWN_pass_barcode02_barcode02_06f09823_00000000_0.bam"
+    samtools quickcheck -u $expected_path
+    num_demuxed_reads=$(samtools view -c $expected_path)
+    if [[ $num_demuxed_reads -ne "1" ]]; then
+        echo "1 demuxed read expected. Found ${num_demuxed_reads}"
+        exit 1
+    fi
+fi
+
 title dorado custom demux dual barcode double end test stage
 $dorado_bin demux $data_dir/barcode_demux/dual/single.fastq --output-dir $output_dir/dual_both --kit-name EXP-DUAL00 --barcode-arrangement $data_dir/barcode_demux/custom_barcodes/dual_arr.toml
 if [[ -z "$SAMTOOLS_UNAVAILABLE" ]]; then

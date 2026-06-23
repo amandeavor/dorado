@@ -1,0 +1,30 @@
+[arrangement]
+name = "EXP-SPLIT"
+kit = "EXP-SPLIT"
+
+mask1_front = "AAGGTTAA"
+mask1_mid = ""
+mask1_mid_inner = "GCTTGGGTGTTTAACC"
+mask1_rear = "GTTTTCGCATTTATCGTGAAACGCTTTCGCGTTTTTCGTGCGCCGCTTCA"
+
+# Barcode sequences
+barcode1_pattern = "OUTER%02i"
+barcode_inner1_pattern = "INNER%02i"
+first_index = 1
+last_index = 2
+first_index_inner = 1
+last_index_inner = 4
+
+## Scoring options
+[scoring]
+max_barcode_penalty = 12
+barcode_end_proximity = 75
+min_barcode_penalty_dist = 3
+min_separation_only_dist = 6
+flank_left_pad = 5
+flank_right_pad = 0
+flank_left_pad_inner = 5
+flank_right_pad_inner = 10
+front_barcode_window = 200
+rear_barcode_window = 200
+midstrand_flank_score = 0.95
