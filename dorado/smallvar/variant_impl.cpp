@@ -1343,26 +1343,25 @@ std::vector<secondary::Variant> filter_hemizygous_variants(
 
     std::vector<secondary::Variant> filtered_variants;
     filtered_variants.reserve(std::ssize(variants));
-    std::vector<secondary::Region>::const_iterator iter_regions;
+    std::vector<secondary::Region>::const_iterator iter_regions = hemizygous_regions.begin();
     for (const secondary::Variant& var : variants) {
         secondary::Variant new_var = var;
         const int64_t var_start = var.pos;
         const int64_t var_end = var.pos + var.ref.length();
-        for (iter_regions = hemizygous_regions.begin(); iter_regions != hemizygous_regions.end();
-             ++iter_regions) {
-            // variant overlaps region
-            if ((iter_regions->start < var_end) &&
-                ((iter_regions->end > var_start) || (iter_regions->end < 0))) {
-                // variant overlaps the region end
-                if ((var_start < iter_regions->start) ||
-                    ((var_end > iter_regions->end) && (iter_regions->end > 0))) {
-                    spdlog::debug(
-                            "Variant {} {} overlaps hemizygous region end, leaving it unchanged.",
-                            iter_regions->name, var.pos);
-                } else {
-                    new_var = secondary::collapse_to_haploid(var, true);
-                }
-                break;
+        while ((iter_regions != hemizygous_regions.end()) && (iter_regions->end > 0) &&
+               (iter_regions->end <= var_start)) {
+            ++iter_regions;
+        }
+        if ((iter_regions != hemizygous_regions.end()) && (iter_regions->start < var_end)) {
+            // variant overlaps the region end
+            if ((var_start < iter_regions->start) ||
+                ((var_end > iter_regions->end) && (iter_regions->end > 0))) {
+                spdlog::debug(
+                        "[filter_hemizygous_variants] Variant {} {} overlaps hemizygous region "
+                        "end, leaving it unchanged.",
+                        iter_regions->name, var.pos);
+            } else {
+                new_var = secondary::collapse_to_haploid(var, true);
             }
         }
         if (is_valid(new_var)) {

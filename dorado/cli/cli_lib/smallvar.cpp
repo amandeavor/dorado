@@ -1070,12 +1070,37 @@ void run_variant_calling(const Options& opt,
 
     std::vector<std::vector<secondary::Region>> hemizygous_regions;
     if (!std::empty(opt.hemizygous_regions)) {
-        hemizygous_regions =
-                resolve_input_regions(draft_lookup, bam_info.ref_seqs, opt.hemizygous_regions);
-        for (const auto& it : hemizygous_regions) {
-            for (const auto& it_inner : it) {
+        hemizygous_regions = resolve_input_regions(draft_lookup, {}, opt.hemizygous_regions);
+        // Sort and merge intervals
+        for (auto& ref_regions : hemizygous_regions) {
+            if (std::ssize(ref_regions) > 1) {
+                std::sort(std::begin(ref_regions), std::end(ref_regions));
+
+                std::vector<secondary::Region> merged_regions;
+                merged_regions.reserve(std::ssize(ref_regions));
+                int64_t next_start = -1;
+                int64_t next_end = -1;
+                for (const auto& region : ref_regions) {
+                    if (region.start > next_end) {
+                        if (next_end > 0) {
+                            merged_regions.emplace_back(
+                                    secondary::Region{region.name, next_start, next_end});
+                        }
+                        next_start = region.start;
+                    }
+                    next_end = region.end;
+                    // handle special case of unbounded end, no need to consider remaining regions
+                    if (region.end == -1) {
+                        break;
+                    }
+                }
+                merged_regions.emplace_back(
+                        secondary::Region{ref_regions[0].name, next_start, next_end});
+                ref_regions = std::move(merged_regions);
+            }
+            for (const auto& region : ref_regions) {
                 spdlog::debug("Added {} to hemizygous regions",
-                              secondary::region_to_string(it_inner));
+                              secondary::region_to_string(region));
             }
         }
     }
