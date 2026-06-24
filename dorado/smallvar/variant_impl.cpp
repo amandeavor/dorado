@@ -1412,30 +1412,21 @@ void worker_variant_calling_reduce(
                 intervals.emplace_back(start, end, seq_id);
             }
 
-            // Sort and merge intervals.
+            // Sort intervals.
             std::sort(std::begin(intervals), std::end(intervals),
                       [](const secondary::IntervalInt64& a, const secondary::IntervalInt64& b) {
                           return std::tie(a.value, a.start, a.stop) <
                                  std::tie(b.value, b.start, b.stop);
                       });
-            std::vector<secondary::IntervalInt64> merged_intervals;
-            merged_intervals.reserve(std::ssize(intervals));
-            int64_t next_start = -1;
-            int64_t next_end = -1;
-            for (const auto& iv : intervals) {
-                if (iv.start > next_end) {
-                    if (next_end > 0) {
-                        merged_intervals.emplace_back(next_start, next_end, seq_id);
-                    }
-                    next_start = iv.start;
-                }
-                next_end = iv.stop;
-            }
-            if (next_end > 0) {
-                merged_intervals.emplace_back(next_start, next_end, seq_id);
-            }
-
-            reduce_data.processed_regions = std::move(merged_intervals);
+            // Dedup intervals.
+            const auto new_end = std::unique(
+                    std::begin(intervals), std::end(intervals),
+                    [](const secondary::IntervalInt64& a, const secondary::IntervalInt64& b) {
+                        return std::tie(a.value, a.start, a.stop) ==
+                               std::tie(b.value, b.start, b.stop);
+                    });
+            intervals.erase(new_end, intervals.end());
+            reduce_data.processed_regions = std::move(intervals);
         }
 
         // Store inference variants.
