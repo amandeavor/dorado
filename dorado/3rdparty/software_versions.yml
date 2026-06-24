@@ -108,7 +108,7 @@ intervaltree:
 minimap2:
     description: >
         Sequence alignment program
-    version: "v2.28"
+    version: "v2.31"
     url: https://github.com/lh3/minimap2
     license: ont-minimap2/src/3rdparty/minimap2/LICENSE.txt
     files:
