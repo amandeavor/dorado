@@ -135,17 +135,16 @@ void ConvStackImpl::reserve_working_memory(WorkingMemory &wm,
         throw std::runtime_error("Empty Koi convolution stack.");
     }
     auto &last = layers.back();
-    last.output_layout =
-            output_layout.has_value()
-                    ? output_layout.value()
-                    : get_koi_lstm_input_layout(last.params.size, last.params.inner_dim,
-                                                last.params.activation);
+    auto &lp = last.params;
+    last.output_layout = output_layout.has_value()
+                                 ? output_layout.value()
+                                 : get_koi_lstm_input_layout(lp.size, lp.inner_dim, lp.activation);
 
     last.cutlass_conv = utils::get_dev_opt<bool>("cutlass_conv", true) &&
                         (last.output_layout == TensorLayout::CUTLASS_TNC_I8 ||
                          last.output_layout == TensorLayout::CUTLASS_TNC_F16);
     if (last.cutlass_conv && layers.size() >= 2) {
-        layers[layers.size() - 2].output_T_padding = last.params.winlen / 2;
+        layers[layers.size() - 2].output_T_padding = lp.winlen / 2;
     }
     for (auto &layer : layers) {
         layer.reserve_working_memory(wm, aux);
@@ -162,7 +161,6 @@ void ConvStackImpl::run_koi(WorkingMemory &wm, const AuxiliaryData *const aux) {
 at::Tensor ConvStackImpl::run_koi_vcs_tx(at::Tensor x, AuxiliaryData *aux) {
     for (auto &layer : layers) {
         x = layer.run_koi_vcs_tx(x, aux);
-        aux->apply_stride_to_chunk_size_granularity(layer.params.stride);
     }
     return x;
 }
@@ -395,7 +393,10 @@ at::Tensor ConvStackImpl::ConvLayer::run_koi_vcs_tx(at::Tensor &conv_input, Auxi
     const int stride = params.stride;
     // The very first conv layer's shape is (C_in, N * T) The rest are (C_in / 8, N * T, 8)
     const int M_input = conv_input.size(1);
-    const bool use_f32_accum = utils::get_dev_opt<bool>("koi_tx_vcs_conv_f32_accum", true);
+
+    // First convolution always accumulates in fp16
+    const bool use_f32_accum =
+            (conv_layer_num > 0) && utils::get_dev_opt<bool>("koi_tx_vcs_conv_f32_accum", true);
 
     if (!w_device.defined()) {
         // conv->weight is [C_out, C_in, W], we want [C_out, W, C_in] and then further tiling
@@ -436,23 +437,19 @@ at::Tensor ConvStackImpl::ConvLayer::run_koi_vcs_tx(at::Tensor &conv_input, Auxi
 
     koi_vcs_sup_fill_conv_load_store_lut(
             stream, aux->total_num_varlen_chunks(), aux->device_chunk_table.data_ptr<int>(),
-            aux->conv_load_lut.data_ptr<
-                    int>(),  // Load and Store LUTs make sense for them to be in AuxiliaryData.h, as their
-            aux->conv_store_lut.data_ptr<
-                    int>(),  // shape depend on total_num_granularity, which changes between batches
-            conv_layer_num == 0 ? nullptr : conv_input.data_ptr(), conv_layer_num == 0 ? 0 : M_out,
-            C_in,
-            aux->chunk_size_granularity(),  // This value gets updated according to ConvLayers stride in ConvStackImpl::run_koi_vcs_tx
-            stride, padding, next_layer_padding);
+            // It makes sense for Load and Store LUTs to be in AuxiliaryData, as their
+            // shape depend on total_num_granularity, which changes between batches
+            aux->conv_load_lut.data_ptr<int>(), aux->conv_store_lut.data_ptr<int>(),
+            conv_layer_num == 0 ? nullptr : conv_input.data_ptr(), M_input, C_in,
+            aux->chunk_size_granularity(), stride, padding, next_layer_padding);
 
     koi_vcs_sup_cnn(stream, conv_layer_num, conv_input.data_ptr(), w_device.data_ptr(),
                     conv_output.data_ptr(), b_device.data_ptr(), aux->conv_load_lut.data_ptr<int>(),
-                    aux->conv_store_lut.data_ptr<int>(), aux->total_num_granularity(),
-                    M_input,  // M of input does not matter for first cnn layer
-                    M_out,    // M of output required always
-                    winlen, C_in, C_out, padding, stride,
-                    use_f32_accum  // First convolution is always in fp16
-    );
+                    aux->conv_store_lut.data_ptr<int>(), aux->total_num_granularity(), M_input,
+                    M_out, winlen, C_in, C_out, padding, stride, use_f32_accum);
+
+    // `chunk_size_granularity` needs to be updated according to convolution stride
+    aux->apply_stride_to_chunk_size_granularity(stride);
 
     // Doesn't really need to be in Koi Layout, BUT, if you decide to change it,
     // you must also change TxModules.cpp, as it gets C from THIS layout!
