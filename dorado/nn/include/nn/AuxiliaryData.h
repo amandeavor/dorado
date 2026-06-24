@@ -45,6 +45,7 @@ public:
     void apply_stride_to_chunk_size_granularity(std::int32_t stride) {
         chunk_size_granularity_ /= stride;
     }
+    void set_chunk_size_granularity(std::int32_t csg) { chunk_size_granularity_ = csg; }
 
     void create_auxiliary_data(const c10::Device& device, KoiThreads& thread_pool);
 

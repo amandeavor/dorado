@@ -316,17 +316,14 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> CudaCaller::create_input_output_t
     int64_t output_bytes = 3 * N * T_out;
     auto storage = torch::empty({std::max(input_bytes, output_bytes)}, opts.dtype(torch::kInt8));
     if (m_variable_chunk_sizes) {
-        at::Tensor input;
+        auto input = storage.slice(0, 0, input_bytes).view(scalar_type).view({C_in, N * T_in});
         std::int64_t aux_size;
         if (m_config.is_tx_model()) {
-            input = storage.slice(0, 0, input_bytes).view(scalar_type).view({C_in, N * T_in});
-            // Add initial padding here
-            input.slice(1, 0, (m_config.convs.front().winlen / 2)).zero_();
             // Tx AuxiliaryData worse-case scenario is if all chunks are of chunk_size_granularity
             // 2 for chunk_table, 3 for luts, all being int32
             aux_size = 5 * (N * (T_in / m_config.chunk_size_granularity()));
         } else {
-            input = storage.slice(0, 0, input_bytes).view(scalar_type).view({1, C_in, N * T_in});
+            input = input.unsqueeze(0);
             // for workspace size see koi/utils_lstm.h
             aux_size = 6 * (T_out + 3) * N;
         }
@@ -593,6 +590,10 @@ void CudaCaller::determine_batch_dims(const BasecallerCreationParams &params,
             }
 
             for (int i = 0; i < 2; ++i) {  // run twice to eliminate outliers
+                if (m_variable_chunk_sizes) {
+                    // Need to reset this for the second run as TxModel may update it
+                    aux->set_chunk_size_granularity(m_config.chunk_size_granularity());
+                }
                 using utils::handle_cuda_result;
                 cudaEvent_t start, stop;
                 handle_cuda_result(cudaEventCreate(&start));

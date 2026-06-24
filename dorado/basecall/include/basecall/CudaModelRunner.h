@@ -42,8 +42,7 @@ private:
     c10::cuda::CUDAStream m_stream;
 
     // Tx VCS exclusive
-    int m_first_conv_padding_int;
-    at::Tensor m_first_conv_padding_tensor;
+    int m_first_conv_padding{0};
 
     // Performance monitoring stats.
     std::atomic<int64_t> m_num_batches_called = 0;

@@ -14,14 +14,13 @@ CudaModelRunner::CudaModelRunner(std::shared_ptr<CudaCaller> caller, size_t batc
         : m_caller(std::move(caller)),
           m_batch_size(m_caller->batch_size(batch_dims_idx)),
           m_chunk_size(m_caller->chunk_size(batch_dims_idx)),
-          m_stream(c10::cuda::getStreamFromPool(false, m_caller->device().index())),
-          m_first_conv_padding_int(m_caller->config().convs.front().winlen / 2) {
+          m_stream(c10::cuda::getStreamFromPool(false, m_caller->device().index())) {
     std::tie(m_input, m_output, m_aux) = m_caller->create_input_output_tensor(batch_dims_idx);
     if (config().is_tx_model()) {
-        m_first_conv_padding_tensor = torch::zeros(
-                {config().num_features,  // m_config.convs.front().insize as per BasecallModelConfig.cpp
-                 m_first_conv_padding_int},
-                at::TensorOptions().device(torch::kCPU));  // Batch is "constructed" on CPU
+        // Add initial padding
+        m_first_conv_padding = m_caller->config().convs.front().winlen / 2;
+        m_chunk_offset = m_first_conv_padding;
+        m_input.slice(1, 0, m_first_conv_padding).zero_();
     }
 }
 
@@ -33,14 +32,13 @@ void CudaModelRunner::accept_chunk(int chunk_idx, const at::Tensor &chunk) {
         m_chunk_sizes.emplace_back(chunk.size(1));
         m_chunk_offset += m_chunk_sizes.back();
         if (config().is_tx_model()) {
-            // Initial padding is added in create_input_output_tensor in CudaCaller
-            // No need to update m_chunk_sizes, that vector only cares about raw_data size
-            m_input.narrow(1, m_chunk_offset, m_first_conv_padding_int)
-                    .copy_(m_first_conv_padding_tensor);
-            m_chunk_offset += m_first_conv_padding_int;
+            // Pad after each chunk. Initial padding is added in CudaModelRunner constructor.
+            // m_chunk_sizes contains raw data size without padding, as padding can be inferred
+            m_input.narrow(1, m_chunk_offset, m_first_conv_padding).zero_();
+            m_chunk_offset += m_first_conv_padding;
         }
     } else {
-        m_input.index_put_({chunk_idx, torch::indexing::Ellipsis}, chunk);
+        m_input.index_put_({chunk_idx}, chunk);
     }
 }
 
@@ -58,7 +56,7 @@ std::vector<decode::DecodedChunk> CudaModelRunner::call_chunks(int num_chunks) {
     auto decoded_chunks = m_caller->call_chunks(m_input, m_output, num_chunks, aux.get());
     if (m_caller->variable_chunk_sizes()) {
         m_chunk_sizes.clear();
-        m_chunk_offset = 0;
+        m_chunk_offset = m_first_conv_padding;
     }
     return decoded_chunks;
 }
