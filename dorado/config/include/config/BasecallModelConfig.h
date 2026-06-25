@@ -61,7 +61,7 @@ struct TxEncoderParams {
     // MHA RoPE maximum sequence length
     // TODO: Tx VCS supports arbitrarily large chunk_size, study
     // TODO: behaviour of max_seq_len and accuracy
-    int max_seq_len{2048};
+    int max_seq_len{4096};
     std::string to_string() const;
 };
 
