@@ -3,6 +3,7 @@
 #include "hts_utils/FastxRandomReader.h"
 #include "sample.h"
 #include "secondary/common/interval.h"
+#include "secondary/common/region.h"
 #include "secondary/common/variant.h"
 #include "secondary/features/decoder_base.h"
 #include "variant_calling_sample.h"
@@ -26,6 +27,19 @@ namespace dorado::secondary {
  * \returns New variant with normalized genotyping information.
  */
 Variant normalize_genotype(const Variant& var, const int32_t ploidy, const float min_qual);
+
+/**
+ * \brief Reduce a polyploid variant to haploid.
+ *          If require_hom is true, then the variant will be called if all alleles have the variant.
+ *          Otherwise, the variant is called if any allele has the variant.
+ *          If the variant is not called, it's alt is cleared so that it will be discarded when
+ *          filtering to valid variants.
+ *          If the number of unique alts is >1, the variant is discarded.
+ * \param var Input polyploid variant.
+ * \param require_hom Whether to require a homozygous call to retain the variant.
+ * \returns New haploid variant.
+ */
+Variant collapse_to_haploid(const Variant& var, const bool require_hom);
 
 /**
  * \brief Normalizes the input variant (pushes it to the left). Stops normalization when another

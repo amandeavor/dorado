@@ -1434,7 +1434,7 @@ CATCH_TEST_CASE(
 
     worker_variant_calling_reduce(input_queue, output_queue, chrom_reduce_data, worker_terminate,
                                   ret_status, stats, fastx_readers, false, 1, draft_lens, decoder,
-                                  30.0f, false, false, 1,
+                                  {}, 30.0f, false, false, 1,
                                   secondary::VariantCandidateSource::COMPUTE);
 
     CATCH_REQUIRE(!ret_status.exception_thrown);
@@ -1526,7 +1526,7 @@ CATCH_TEST_CASE(
     // Run the unit under test.
     worker_variant_calling_reduce(input_queue, output_queue, chrom_reduce_data, worker_terminate,
                                   ret_status, stats, fastx_readers, false, 1, draft_lens, decoder,
-                                  30.0f, false, false, 1,
+                                  {}, 30.0f, false, false, 1,
                                   secondary::VariantCandidateSource::COMPUTE);
 
     // Eval that the run was successful, that the stats processed was capped to 1.0
@@ -1600,7 +1600,7 @@ CATCH_TEST_CASE("worker_variant_calling_reduce tops up progress when no inferenc
     // Run the unit under test.
     worker_variant_calling_reduce(input_queue, output_queue, chrom_reduce_data, worker_terminate,
                                   ret_status, stats, fastx_readers, false, 1, draft_lens, decoder,
-                                  30.0f, false, false, 1,
+                                  {}, 30.0f, false, false, 1,
                                   secondary::VariantCandidateSource::COMPUTE);
 
     // Eval that the run was successful.
@@ -1615,6 +1615,304 @@ CATCH_TEST_CASE("worker_variant_calling_reduce tops up progress when no inferenc
     int64_t ready_seq_id = -1;
     CATCH_REQUIRE(output_queue.try_pop(ready_seq_id) == utils::AsyncQueueStatus::Success);
     CATCH_CHECK(ready_seq_id == 0);
+}
+
+CATCH_TEST_CASE(
+        "worker_variant_calling_reduce collapses variants to haploid when hemizygous_regions is "
+        "set",
+        TEST_GROUP) {
+    /**
+     * \brief Verifies that worker_variant_calling_reduce collapses hom diploid variants to haploid when
+     *          homozygous_regions is set.
+     */
+    const auto temp_dir = make_temp_dir("variant_reduce_trim");
+    const auto reference_fasta = temp_dir.m_path / "reference.fa";
+
+    {
+        std::ofstream ref_out(reference_fasta);
+        ref_out << ">chr1\nAAAAAA\n";
+    }
+
+    const secondary::DecoderBase decoder(secondary::LabelSchemeType::DIPLOID);
+    secondary::VariantCallingSample vc_sample{
+            .seq_id = 0,
+            .positions_major = {4, 5},
+            .positions_minor = {0, 0},
+            .logits = make_polyploid_probs(decoder.get_label_scheme_symbols(), {"AA", "AA"},
+                                           {0.999f, 0.999f}),
+    };
+    const secondary::Variant simple_variant{
+            .seq_id = 0,
+            .pos = 4,
+            .ref = "A",
+            .alts = {"T"},
+            .filter = "PASS",
+            .info = {},
+            .qual = 60.0f,
+            .genotype = {{"GT", "1/1"}, {"GQ", "60"}},
+            .rstart = 0,
+            .rend = 0,
+    };
+    const secondary::Variant expected_simple_variant{
+            .seq_id = 0,
+            .pos = 4,
+            .ref = "A",
+            .alts = {"T"},
+            .filter = "PASS",
+            .info = {},
+            .qual = 60.0f,
+            .genotype = {{"GT", "1"}, {"GQ", "60"}},
+            .rstart = 0,
+            .rend = 0,
+    };
+    const std::vector<std::vector<secondary::Region>> hemizygous_regions = {{
+            {"ref", 0, 10},
+    }};
+
+    std::vector<ChromosomeReduceData> chrom_reduce_data(1);
+    {
+        ChromosomeReduceData& data = chrom_reduce_data[0];
+        data.seq_id = 0;
+        data.seq_name = "chr1";
+        data.seq_len = 6;
+        data.progress_target = 2;
+        data.ready = true;
+        data.num_samples = 1;
+        data.variants_simple = {simple_variant};
+    }
+
+    std::vector<std::unique_ptr<hts_io::FastxRandomReader>> fastx_readers;
+    fastx_readers.emplace_back(std::make_unique<hts_io::FastxRandomReader>(reference_fasta));
+
+    const std::vector<std::pair<std::string, int64_t>> draft_lens{
+            {"chr1", 6},
+    };
+
+    utils::AsyncQueue<secondary::VariantCallingSample> input_queue{2};
+    utils::AsyncQueue<int64_t> output_queue{2};
+    CATCH_REQUIRE(input_queue.try_push(std::move(vc_sample)) == utils::AsyncQueueStatus::Success);
+    input_queue.terminate(utils::AsyncQueueTerminateFast::No);
+
+    std::atomic<bool> worker_terminate{false};
+    secondary::WorkerReturnStatus ret_status;
+
+    secondary::Stats stats;
+    stats.set("processed", 0.0);
+
+    worker_variant_calling_reduce(input_queue, output_queue, chrom_reduce_data, worker_terminate,
+                                  ret_status, stats, fastx_readers, false, 1, draft_lens, decoder,
+                                  hemizygous_regions, 30.0f, false, false, 1,
+                                  secondary::VariantCandidateSource::COMPUTE);
+
+    CATCH_REQUIRE(!ret_status.exception_thrown);
+    CATCH_REQUIRE(!worker_terminate.load());
+    CATCH_REQUIRE(std::empty(chrom_reduce_data[0].variants_inference));
+    CATCH_CHECK(chrom_reduce_data[0].variants_merged == std::vector{expected_simple_variant});
+    CATCH_REQUIRE(std::size(chrom_reduce_data[0].processed_regions) == 1);
+    CATCH_CHECK(chrom_reduce_data[0].processed_regions[0].start == 4);
+    CATCH_CHECK(chrom_reduce_data[0].processed_regions[0].stop == 6);
+    CATCH_CHECK(chrom_reduce_data[0].processed_regions[0].value == 0);
+    CATCH_CHECK(std::size(output_queue) == 1);
+    CATCH_CHECK(stats.get_stats().at("processed") == 2.0);
+
+    int64_t ready_seq_id = -1;
+    CATCH_REQUIRE(output_queue.try_pop(ready_seq_id) == utils::AsyncQueueStatus::Success);
+    CATCH_CHECK(ready_seq_id == 0);
+}
+
+CATCH_TEST_CASE(
+        "worker_variant_calling_reduce keeps variants in diploid region when hemizygous_regions is "
+        "set",
+        TEST_GROUP) {
+    /**
+     * \brief Verifies that worker_variant_calling_reduce keeps diploid variants in diploid regions when
+     *          hemizygous_regions is set.
+     */
+    const auto temp_dir = make_temp_dir("variant_reduce_trim");
+    const auto reference_fasta = temp_dir.m_path / "reference.fa";
+
+    {
+        std::ofstream ref_out(reference_fasta);
+        ref_out << ">chr1\nAAAAAA\n";
+    }
+
+    const secondary::DecoderBase decoder(secondary::LabelSchemeType::DIPLOID);
+    secondary::VariantCallingSample vc_sample{
+            .seq_id = 0,
+            .positions_major = {4, 5},
+            .positions_minor = {0, 0},
+            .logits = make_polyploid_probs(decoder.get_label_scheme_symbols(), {"AA", "AA"},
+                                           {0.999f, 0.999f}),
+    };
+    const secondary::Variant simple_variant{
+            .seq_id = 0,
+            .pos = 4,
+            .ref = "A",
+            .alts = {"T"},
+            .filter = "PASS",
+            .info = {},
+            .qual = 60.0f,
+            .genotype = {{"GT", "1/1"}, {"GQ", "60"}},
+            .rstart = 0,
+            .rend = 0,
+    };
+    const std::vector<std::vector<secondary::Region>> hemizygous_regions = {{{"ref", 6, 10}}};
+
+    std::vector<ChromosomeReduceData> chrom_reduce_data(1);
+    {
+        ChromosomeReduceData& data = chrom_reduce_data[0];
+        data.seq_id = 0;
+        data.seq_name = "chr1";
+        data.seq_len = 6;
+        data.progress_target = 2;
+        data.ready = true;
+        data.num_samples = 1;
+        data.variants_simple = {simple_variant};
+    }
+
+    std::vector<std::unique_ptr<hts_io::FastxRandomReader>> fastx_readers;
+    fastx_readers.emplace_back(std::make_unique<hts_io::FastxRandomReader>(reference_fasta));
+
+    const std::vector<std::pair<std::string, int64_t>> draft_lens{
+            {"chr1", 6},
+    };
+
+    utils::AsyncQueue<secondary::VariantCallingSample> input_queue{2};
+    utils::AsyncQueue<int64_t> output_queue{2};
+    CATCH_REQUIRE(input_queue.try_push(std::move(vc_sample)) == utils::AsyncQueueStatus::Success);
+    input_queue.terminate(utils::AsyncQueueTerminateFast::No);
+
+    std::atomic<bool> worker_terminate{false};
+    secondary::WorkerReturnStatus ret_status;
+
+    secondary::Stats stats;
+    stats.set("processed", 0.0);
+
+    worker_variant_calling_reduce(input_queue, output_queue, chrom_reduce_data, worker_terminate,
+                                  ret_status, stats, fastx_readers, false, 1, draft_lens, decoder,
+                                  hemizygous_regions, 30.0f, false, false, 1,
+                                  secondary::VariantCandidateSource::COMPUTE);
+
+    CATCH_REQUIRE(!ret_status.exception_thrown);
+    CATCH_REQUIRE(!worker_terminate.load());
+    CATCH_REQUIRE(std::empty(chrom_reduce_data[0].variants_inference));
+    CATCH_CHECK(chrom_reduce_data[0].variants_merged == std::vector{simple_variant});
+    CATCH_REQUIRE(std::size(chrom_reduce_data[0].processed_regions) == 1);
+    CATCH_CHECK(chrom_reduce_data[0].processed_regions[0].start == 4);
+    CATCH_CHECK(chrom_reduce_data[0].processed_regions[0].stop == 6);
+    CATCH_CHECK(chrom_reduce_data[0].processed_regions[0].value == 0);
+    CATCH_CHECK(std::size(output_queue) == 1);
+    CATCH_CHECK(stats.get_stats().at("processed") == 2.0);
+
+    int64_t ready_seq_id = -1;
+    CATCH_REQUIRE(output_queue.try_pop(ready_seq_id) == utils::AsyncQueueStatus::Success);
+    CATCH_CHECK(ready_seq_id == 0);
+}
+
+CATCH_TEST_CASE("filter_hemizygous_variants", TEST_GROUP) {
+    /**
+     * \brief Test handling of variant and hemizygous region overlaps in filter_hemizygous_variants.
+     */
+
+    // clang-format off
+    const std::vector<std::vector<secondary::Region>> hemizygous_regions = {
+        {{"chr1", 0, -1}},                    // entire contig region with end unspecified
+        {},                                   // no regions specified
+        {{"chr3", 10, 20}, {"chr3", 30, 40}}, // partial regions
+    };
+
+    const std::vector<secondary::Variant> chr1_variants = {
+        {
+            // collapsed because hom in hemizygous region
+            .seq_id = 0, .pos = 0, .ref = "A", .alts = {"T"}, .filter = "PASS", .info = {}, .qual = 60.0f, .genotype = {{"GT", "1/1"}, {"GQ", "60"}}, .rstart = 0, .rend = 0,
+        }, {
+            // filtered because het-alt
+            .seq_id = 0, .pos = 5, .ref = "A", .alts = {"T", "C"}, .filter = "PASS", .info = {}, .qual = 60.0f, .genotype = {{"GT", "1/2"}, {"GQ", "60"}}, .rstart = 0, .rend = 0,
+        }, {
+            // filtered because het
+            .seq_id = 0, .pos = 5, .ref = "A", .alts = {"T"}, .filter = "PASS", .info = {}, .qual = 60.0f, .genotype = {{"GT", "0/1"}, {"GQ", "60"}}, .rstart = 0, .rend = 0,
+        }
+    };
+    const std::vector<secondary::Variant> expected_chr1_filtered_variants = {
+        {
+            // collapsed because hom in hemizygous region
+            .seq_id = 0, .pos = 0, .ref = "A", .alts = {"T"}, .filter = "PASS", .info = {}, .qual = 60.0f, .genotype = {{"GT", "1"}, {"GQ", "60"}}, .rstart = 0, .rend = 0,
+        }
+    };
+    // clang-format on
+
+    const std::vector<secondary::Variant> chr1_filtered_variants =
+            smallvar::filter_hemizygous_variants(chr1_variants, hemizygous_regions[0]);
+    CATCH_CHECK(chr1_filtered_variants == expected_chr1_filtered_variants);
+
+    // clang-format off
+    const std::vector<secondary::Variant> chr2_variants = {
+        {
+            .seq_id = 1, .pos = 0, .ref = "A", .alts = {"T"}, .filter = "PASS", .info = {}, .qual = 60.0f, .genotype = {{"GT", "1/1"}, {"GQ", "60"}}, .rstart = 0, .rend = 0,
+        }, {
+            .seq_id = 1, .pos = 5, .ref = "A", .alts = {"T", "C"}, .filter = "PASS", .info = {}, .qual = 60.0f, .genotype = {{"GT", "1/2"}, {"GQ", "60"}}, .rstart = 0, .rend = 0,
+        }, {
+            .seq_id = 1, .pos = 10, .ref = "A", .alts = {"T"}, .filter = "PASS", .info = {}, .qual = 60.0f, .genotype = {{"GT", "0/1"}, {"GQ", "60"}}, .rstart = 0, .rend = 0,
+        }
+    };
+    // clang-format on
+
+    const std::vector<secondary::Variant> chr2_filtered_variants =
+            smallvar::filter_hemizygous_variants(chr2_variants, hemizygous_regions[1]);
+    // all unchanged because hemizygous region list is empty
+    CATCH_CHECK(chr2_filtered_variants == chr2_variants);
+
+    // clang-format off
+    const std::vector<secondary::Variant> chr3_variants = {
+        {
+            // unchanged because outside hemizygous region
+            .seq_id = 2, .pos = 1, .ref = "A", .alts = {"T"}, .filter = "PASS", .info = {}, .qual = 60.0f, .genotype = {{"GT", "1/1"}, {"GQ", "60"}}, .rstart = 0, .rend = 0,
+        }, {
+            // unchanged because spans start of a hemizygous region
+            .seq_id = 2, .pos = 8, .ref = "ACCGTGT", .alts = {"T"}, .filter = "PASS", .info = {}, .qual = 60.0f, .genotype = {{"GT", "1/1"}, {"GQ", "60"}}, .rstart = 0, .rend = 0,
+        }, {
+            // discarded because het in a hemizygous region
+            .seq_id = 2, .pos = 16, .ref = "A", .alts = {"T"}, .filter = "PASS", .info = {}, .qual = 60.0f, .genotype = {{"GT", "0/1"}, {"GQ", "60"}}, .rstart = 0, .rend = 0,
+        }, {
+            // unchanged because spans end of a hemizygous region
+            .seq_id = 2, .pos = 19, .ref = "AGAG", .alts = {"A"}, .filter = "PASS", .info = {}, .qual = 60.0f, .genotype = {{"GT", "0/1"}, {"GQ", "60"}}, .rstart = 0, .rend = 0,
+        }, {
+            // unchanged because outside hemizygous region
+            .seq_id = 2, .pos = 22, .ref = "A", .alts = {"C"}, .filter = "PASS", .info = {}, .qual = 60.0f, .genotype = {{"GT", "0/1"}, {"GQ", "60"}}, .rstart = 0, .rend = 0,
+        }, {
+            // collapsed because hom inside a hemizygous region
+            .seq_id = 2, .pos = 33, .ref = "ACC", .alts = {"A"}, .filter = "PASS", .info = {}, .qual = 60.0f, .genotype = {{"GT", "1/1"}, {"GQ", "60"}}, .rstart = 0, .rend = 0,
+        }, {
+            // unchanged because outside hemizygous region
+            .seq_id = 2, .pos = 43, .ref = "G", .alts = {"GTTC"}, .filter = "PASS", .info = {}, .qual = 60.0f, .genotype = {{"GT", "1/1"}, {"GQ", "60"}}, .rstart = 0, .rend = 0,
+        },
+    };
+    const std::vector<secondary::Variant> expected_chr3_filtered_variants = {
+        {
+            // unchanged because outside hemizygous region
+            .seq_id = 2, .pos = 1, .ref = "A", .alts = {"T"}, .filter = "PASS", .info = {}, .qual = 60.0f, .genotype = {{"GT", "1/1"}, {"GQ", "60"}}, .rstart = 0, .rend = 0,
+        }, {
+            // unchanged because spans start of a hemizygous region
+            .seq_id = 2, .pos = 8, .ref = "ACCGTGT", .alts = {"T"}, .filter = "PASS", .info = {}, .qual = 60.0f, .genotype = {{"GT", "1/1"}, {"GQ", "60"}}, .rstart = 0, .rend = 0,
+        }, {
+            // unchanged because spans end of a hemizygous region
+            .seq_id = 2, .pos = 19, .ref = "AGAG", .alts = {"A"}, .filter = "PASS", .info = {}, .qual = 60.0f, .genotype = {{"GT", "0/1"}, {"GQ", "60"}}, .rstart = 0, .rend = 0,
+        }, {
+            // unchanged because outside hemizygous region
+            .seq_id = 2, .pos = 22, .ref = "A", .alts = {"C"}, .filter = "PASS", .info = {}, .qual = 60.0f, .genotype = {{"GT", "0/1"}, {"GQ", "60"}}, .rstart = 0, .rend = 0,
+        }, {
+            // collapsed because hom inside a hemizygous region
+            .seq_id = 2, .pos = 33, .ref = "ACC", .alts = {"A"}, .filter = "PASS", .info = {}, .qual = 60.0f, .genotype = {{"GT", "1"}, {"GQ", "60"}}, .rstart = 0, .rend = 0,
+        }, {
+            // unchanged because outside hemizygous region
+            .seq_id = 2, .pos = 43, .ref = "G", .alts = {"GTTC"}, .filter = "PASS", .info = {}, .qual = 60.0f, .genotype = {{"GT", "1/1"}, {"GQ", "60"}}, .rstart = 0, .rend = 0,
+        },
+    };
+    // clang-format on
+
+    const std::vector<secondary::Variant> chr3_filtered_variants =
+            smallvar::filter_hemizygous_variants(chr3_variants, hemizygous_regions[2]);
+    CATCH_CHECK(chr3_filtered_variants == expected_chr3_filtered_variants);
 }
 
 }  // namespace dorado::smallvar::tests

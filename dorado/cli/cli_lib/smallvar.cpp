@@ -76,6 +76,8 @@ struct Options {
     int32_t bam_chunk = 1'000'000;
     std::optional<std::string> regions_str;
     std::vector<secondary::Region> regions;
+    std::optional<std::string> hemizygous_regions_str;
+    std::vector<secondary::Region> hemizygous_regions;
     bool full_precision = false;
     bool load_scripted_model = false;
     int32_t queue_size = 1000;
@@ -194,6 +196,12 @@ void add_arguments(argparse::ArgumentParser& parser, int& verbosity) {
                 .scan<'i', int>();
         parser.add_argument("--regions")
                 .help("Process only these regions of the input. Can be either a path to a BED file "
+                      "or a list of comma-separated Htslib-formatted regions (start is 1-based, "
+                      "end "
+                      "is inclusive).");
+        parser.add_argument("--hemizygous-regions")
+                .help("Regions in which haploid variant calls are expected. Can be either a path "
+                      "to a BED file "
                       "or a list of comma-separated Htslib-formatted regions (start is 1-based, "
                       "end "
                       "is inclusive).");
@@ -436,6 +444,10 @@ Options set_options(const argparse::ArgumentParser& parser, const int verbosity)
     if (opt.regions_str) {
         opt.regions = secondary::parse_regions(*opt.regions_str);
     }
+    opt.hemizygous_regions_str = parser.present<std::string>("hemizygous-regions");
+    if (opt.hemizygous_regions_str) {
+        opt.hemizygous_regions = secondary::parse_regions(*opt.hemizygous_regions_str);
+    }
     opt.min_depth = parser.get<int>("min-depth");
 
     opt.window_len = parser.present<int32_t>("window-len");
@@ -538,6 +550,12 @@ void validate_options(const Options& opt) {
 
     if (opt.regions_str && std::empty(opt.regions)) {
         spdlog::error("Option --regions is specified, but an empty set of regions is given!");
+        std::exit(EXIT_FAILURE);
+    }
+
+    if (opt.hemizygous_regions_str && std::empty(opt.hemizygous_regions)) {
+        spdlog::error(
+                "Option --hemizygous-regions is specified, but an empty set of regions is given!");
         std::exit(EXIT_FAILURE);
     }
 
@@ -1050,6 +1068,43 @@ void run_variant_calling(const Options& opt,
     const std::vector<std::vector<secondary::Region>> input_regions =
             resolve_input_regions(draft_lookup, bam_info.ref_seqs, opt.regions);
 
+    std::vector<std::vector<secondary::Region>> hemizygous_regions;
+    if (!std::empty(opt.hemizygous_regions)) {
+        hemizygous_regions = resolve_input_regions(draft_lookup, {}, opt.hemizygous_regions);
+        // Sort and merge intervals
+        for (auto& ref_regions : hemizygous_regions) {
+            if (std::ssize(ref_regions) > 1) {
+                std::sort(std::begin(ref_regions), std::end(ref_regions));
+
+                std::vector<secondary::Region> merged_regions;
+                merged_regions.reserve(std::ssize(ref_regions));
+                int64_t next_start = -1;
+                int64_t next_end = -1;
+                for (const auto& region : ref_regions) {
+                    if (region.start > next_end) {
+                        if (next_end > 0) {
+                            merged_regions.emplace_back(
+                                    secondary::Region{region.name, next_start, next_end});
+                        }
+                        next_start = region.start;
+                    }
+                    next_end = region.end;
+                    // handle special case of unbounded end, no need to consider remaining regions
+                    if (region.end == -1) {
+                        break;
+                    }
+                }
+                merged_regions.emplace_back(
+                        secondary::Region{ref_regions[0].name, next_start, next_end});
+                ref_regions = std::move(merged_regions);
+            }
+            for (const auto& region : ref_regions) {
+                spdlog::debug("Added {} to hemizygous regions",
+                              secondary::region_to_string(region));
+            }
+        }
+    }
+
     // Load only reference sequences which are needed for the selected regions.
     const std::vector<std::string> draft_seqs =
             load_reference_sequences(opt.in_ref_fastx_fn, draft_lens, input_regions);
@@ -1281,7 +1336,8 @@ void run_variant_calling(const Options& opt,
             smallvar::worker_variant_calling_reduce(
                     vc_data_queue, vc_writer_queue, chrom_reduce_data, worker_terminate,
                     wrs_thread_call_variants, stats, draft_readers, opt.continue_on_error,
-                    opt.threads, draft_lens, *resources.decoder, opt.pass_min_qual, opt.ambig_ref,
+                    opt.threads, draft_lens, *resources.decoder, hemizygous_regions,
+                    opt.pass_min_qual, opt.ambig_ref,
                     opt.out_format == VariantCallingFormatEnum::GVCF, flank_trim_len,
                     variant_candidate_source);
         });

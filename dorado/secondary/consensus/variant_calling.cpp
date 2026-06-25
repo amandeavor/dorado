@@ -679,6 +679,61 @@ Variant normalize_genotype(const Variant& var, const int32_t ploidy, const float
     return ret;
 }
 
+Variant collapse_to_haploid(const Variant& var, const bool require_hom) {
+    Variant ret = var;
+
+    // This is a gVCF record.
+    if ((var.filter == ".") || (var.alts == std::vector<std::string>{"."})) {
+        ret.alts = {"."};
+        ret.filter = ".";
+        for (auto& it_gt : ret.genotype) {
+            if (it_gt.first == "GT") {
+                it_gt.second = "0";
+                break;
+            }
+        }
+        return ret;
+    }
+
+    if (std::ssize(var.alts) > 1) {
+        spdlog::debug("Discarding variant with more than one alt in haploid region ({}, {}).",
+                      var.seq_id, var.pos);
+        ret.alts.clear();
+        ret.filter = ".";
+        for (auto& it_gt : ret.genotype) {
+            if (it_gt.first == "GT") {
+                it_gt.second = "0";
+                break;
+            }
+        }
+        return ret;
+    }
+
+    bool is_homozygous = true;
+    std::vector<std::pair<std::string, std::string>>::iterator it_gt;
+    for (it_gt = ret.genotype.begin(); it_gt != ret.genotype.end(); ++it_gt) {
+        if (it_gt->first == "GT") {
+            if (it_gt->second.find("0") != std::string::npos) {
+                is_homozygous = false;
+            }
+            break;
+        }
+    }
+    if (it_gt == ret.genotype.end()) {
+        spdlog::warn("Failed to find genotype record for variant at ({}, {})", ret.seq_id, ret.pos);
+        ret.alts.clear();
+    }
+    if (is_homozygous || !require_hom) {
+        it_gt->second = "1";
+    } else {
+        ret.alts.clear();
+        it_gt->second = "0";
+        spdlog::debug("Discarding heterozygous variant ({}, {}) in haploid region.", ret.seq_id,
+                      ret.pos);
+    }
+    return ret;
+}
+
 Variant normalize_variant(const std::string_view ref_with_gaps,
                           const std::vector<std::string_view>& cons_seqs_with_gaps,
                           const std::vector<int64_t>& positions_major,

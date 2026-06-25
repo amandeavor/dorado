@@ -1334,6 +1334,43 @@ std::vector<secondary::Variant> merge_variants(
 
 }  // namespace
 
+std::vector<secondary::Variant> filter_hemizygous_variants(
+        const std::vector<secondary::Variant>& variants,
+        const std::vector<secondary::Region>& hemizygous_regions) {
+    if (std::empty(hemizygous_regions)) {
+        return variants;
+    }
+
+    std::vector<secondary::Variant> filtered_variants;
+    filtered_variants.reserve(std::ssize(variants));
+    std::vector<secondary::Region>::const_iterator iter_regions = hemizygous_regions.begin();
+    for (const secondary::Variant& var : variants) {
+        secondary::Variant new_var = var;
+        const int64_t var_start = var.pos;
+        const int64_t var_end = var.pos + var.ref.length();
+        while ((iter_regions != hemizygous_regions.end()) && (iter_regions->end > 0) &&
+               (iter_regions->end <= var_start)) {
+            ++iter_regions;
+        }
+        if ((iter_regions != hemizygous_regions.end()) && (iter_regions->start < var_end)) {
+            // variant overlaps the region end
+            if ((var_start < iter_regions->start) ||
+                ((var_end > iter_regions->end) && (iter_regions->end > 0))) {
+                spdlog::debug(
+                        "[filter_hemizygous_variants] Variant {} {} overlaps hemizygous region "
+                        "end, leaving it unchanged.",
+                        iter_regions->name, var.pos);
+            } else {
+                new_var = secondary::collapse_to_haploid(var, true);
+            }
+        }
+        if (is_valid(new_var)) {
+            filtered_variants.emplace_back(std::move(new_var));
+        }
+    }
+    return filtered_variants;
+}
+
 void worker_variant_calling_reduce(
         utils::AsyncQueue<secondary::VariantCallingSample>& input_queue,
         utils::AsyncQueue<int64_t>& out_queue,  // ID of the chromosome that is ready for writing.
@@ -1346,6 +1383,7 @@ void worker_variant_calling_reduce(
         const int32_t num_threads,
         const std::vector<std::pair<std::string, int64_t>>& draft_lens,
         const secondary::DecoderBase& decoder,
+        const std::vector<std::vector<secondary::Region>>& hemizygous_regions,
         const float pass_min_qual,
         const bool ambig_ref,
         const bool gvcf,
@@ -1439,6 +1477,14 @@ void worker_variant_calling_reduce(
                                    reduce_data.processed_regions, flank_trim);
         } else {
             reduce_data.variants_merged = reduce_data.variants_inference;
+        }
+
+        if (!std::empty(hemizygous_regions)) {
+            const std::vector<secondary::Region>& reduce_hemizygous = hemizygous_regions[seq_id];
+            if (!std::empty(reduce_hemizygous)) {
+                reduce_data.variants_merged =
+                        filter_hemizygous_variants(reduce_data.variants_merged, reduce_hemizygous);
+            }
         }
 
         // Release the data after processing.
