@@ -414,7 +414,7 @@ void HeaderMapper::add_barcodes() {
             auto new_read_group_id =
                     read_group_id + "_" + (alias.empty() ? standard_barcode_name : alias);
             if (!read_group_id.empty()) {
-                auto barcode_sequence = get_barcode_sequence(outer_barcode_name);
+                std::string barcode_sequence = get_barcode_sequence(outer_barcode_name);
                 if (!inner_barcode_name.empty()) {
                     barcode_sequence += "-" + get_barcode_sequence(inner_barcode_name);
                 }

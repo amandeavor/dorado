@@ -1219,14 +1219,13 @@ BarcodeClassifier::calculate_barcode_score_dual(std::string_view read_seq,
     const auto& top_left_buffer_inner = candidate.top_context_left_buffer_inner;
     const auto& top_right_buffer_inner = candidate.top_context_right_buffer_inner;
 
-    EdlibAlignResult top_result;
-    float top_flank_score;
-    int top_bc_loc;
-    int top_bc_loc_inner;
-    int start_idx, end_idx, top_start_idx_inner, top_end_idx_inner;
+    EdlibAlignResult top_result{};
+    EdlibAlignResult top_result_inner{};
+    float top_flank_score{};
+    int top_bc_loc{};
+    int top_bc_loc_inner{};
     if (!candidate.top_context_inner.empty()) {
-        EdlibAlignResult top_result_inner;
-        float top_flank_score_inner;
+        float top_flank_score_inner = 0.0f;
         std::tie(top_result, top_flank_score, top_bc_loc) = extract_flank_fit(
                 top_context, read_top, barcode_len, placement_config, "top score");
         std::tie(top_result_inner, top_flank_score_inner, top_bc_loc_inner) =
@@ -1239,12 +1238,14 @@ BarcodeClassifier::calculate_barcode_score_dual(std::string_view read_seq,
                 extract_flank_fit_dual(top_context, read_top, barcode_len, placement_config,
                                        "top score");
     }
-    start_idx = std::max(0, top_bc_loc - static_cast<int>(top_left_buffer.length()) - barcode_len);
-    end_idx = top_bc_loc + static_cast<int>(top_right_buffer.length());
-    top_start_idx_inner =
+    const int start_idx =
+            std::max(0, top_bc_loc - static_cast<int>(top_left_buffer.length()) - barcode_len);
+    const int end_idx = top_bc_loc + static_cast<int>(top_right_buffer.length());
+    const int top_start_idx_inner =
             std::max(0, top_bc_loc_inner - static_cast<int>(top_left_buffer_inner.length()) -
                                 barcode_len_inner);
-    top_end_idx_inner = top_bc_loc_inner + static_cast<int>(top_right_buffer_inner.length());
+    const int top_end_idx_inner =
+            top_bc_loc_inner + static_cast<int>(top_right_buffer_inner.length());
 
     std::string_view top_mask = read_top.substr(start_idx, end_idx - start_idx);
     std::string_view top_mask_inner =
@@ -1252,98 +1253,69 @@ BarcodeClassifier::calculate_barcode_score_dual(std::string_view read_seq,
 
     utils::trace_log("BC location {}", top_bc_loc);
 
-    std::vector<BarcodeScoreResult> results;
-    for (size_t i = 0; i < candidate.barcodes1.size(); i++) {
-        const auto barcode = candidate.top_context_left_buffer + candidate.barcodes1[i] +
-                             candidate.top_context_right_buffer;
-        auto& barcode_name = candidate.barcode_names[i];
+    auto score_barcodes = [&](const std::vector<std::string>& barcodes,
+                              const std::vector<std::string>& barcode_names,
+                              const std::string& left_buffer, const std::string& right_buffer,
+                              std::string_view mask, const char* trace_label,
+                              const char* penalty_label) {
+        std::vector<BarcodeScoreResult> barcode_results;
+        barcode_results.reserve(barcodes.size());
+        for (size_t i = 0; i < barcodes.size(); i++) {
+            const auto barcode = left_buffer + barcodes[i] + right_buffer;
+            const auto& barcode_name = barcode_names[i];
 
-        if (!barcode_is_permitted(allowed_barcodes, barcode_name)) {
-            continue;
+            if (!barcode_is_permitted(allowed_barcodes, barcode_name)) {
+                continue;
+            }
+            utils::trace_log("{} {}", trace_label, barcode_name);
+
+            auto top_mask_penalty =
+                    extract_barcode_penalty(barcode, mask, mask_config, penalty_label);
+
+            BarcodeScoreResult res;
+            res.barcode_name = barcode_name;
+            res.normalized_barcode_name = barcode_kits::normalize_barcode_name(barcode_name);
+            res.kit = candidate.kit;
+            res.barcode_kit = candidate.barcode_kit;
+            if (rear_barcodes) {
+                res.bottom_flank_score = top_flank_score;
+                res.flank_score = res.bottom_flank_score;
+                res.bottom_penalty = top_mask_penalty;
+                res.penalty = res.bottom_penalty;
+                res.use_top = false;
+                res.bottom_barcode_score =
+                        1.f - static_cast<float>(res.bottom_penalty) / barcode.length();
+                res.barcode_score = res.bottom_barcode_score;
+                int rear_start =
+                        std::max(0, (int)read_seq.length() - m_scoring_params.rear_barcode_window);
+                res.bottom_barcode_pos = {rear_start + top_result.startLocations[0],
+                                          rear_start + top_result.endLocations[0]};
+            } else {
+                res.top_flank_score = top_flank_score;
+                res.flank_score = res.top_flank_score;
+                res.top_penalty = top_mask_penalty;
+                res.penalty = res.top_penalty;
+                res.use_top = true;
+                res.top_barcode_score =
+                        1.f - static_cast<float>(res.top_penalty) / barcode.length();
+                res.barcode_score = res.top_barcode_score;
+                res.top_barcode_pos = {top_result.startLocations[0], top_result.endLocations[0]};
+            }
+            barcode_results.emplace_back(std::move(res));
         }
-        utils::trace_log("Checking barcode {}", barcode_name);
+        return barcode_results;
+    };
 
-        auto top_mask_penalty =
-                extract_barcode_penalty(barcode, top_mask, mask_config, "top window");
-
-        BarcodeScoreResult res;
-        res.barcode_name = barcode_name;
-        res.normalized_barcode_name = barcode_kits::normalize_barcode_name(barcode_name);
-        res.kit = candidate.kit;
-        res.barcode_kit = candidate.barcode_kit;
-        if (rear_barcodes) {
-            res.bottom_flank_score = top_flank_score;
-            res.flank_score = res.bottom_flank_score;
-            res.bottom_penalty = top_mask_penalty;
-            res.penalty = res.bottom_penalty;
-            res.use_top = false;
-            res.bottom_barcode_score =
-                    1.f - static_cast<float>(res.bottom_penalty) / barcode.length();
-            res.barcode_score = res.bottom_barcode_score;
-            int rear_start =
-                    std::max(0, (int)read_seq.length() - m_scoring_params.rear_barcode_window);
-            res.bottom_barcode_pos = {rear_start + top_result.startLocations[0],
-                                      rear_start + top_result.endLocations[0]};
-        } else {
-            res.top_flank_score = top_flank_score;
-            res.flank_score = res.top_flank_score;
-            res.top_penalty = top_mask_penalty;
-            res.penalty = res.top_penalty;
-            res.use_top = true;
-            res.top_barcode_score = 1.f - static_cast<float>(res.top_penalty) / barcode.length();
-            res.barcode_score = res.top_barcode_score;
-            res.top_barcode_pos = {top_result.startLocations[0], top_result.endLocations[0]};
-        }
-        results.push_back(res);
-    }
-
-    std::vector<BarcodeScoreResult> results_inner;
-    for (size_t i = 0; i < candidate.barcodes_inner1.size(); i++) {
-        auto barcode = std::string(top_left_buffer_inner)
-                               .append(candidate.barcodes_inner1[i])
-                               .append(top_right_buffer_inner);
-        auto& barcode_name = candidate.barcode_names_inner[i];
-
-        if (!barcode_is_permitted(allowed_barcodes, barcode_name)) {
-            continue;
-        }
-        utils::trace_log("Checking inner barcode {}", barcode_name);
-
-        auto top_mask_penalty_inner =
-                extract_barcode_penalty(barcode, top_mask_inner, mask_config, "top window inner");
-
-        BarcodeScoreResult res;
-        res.barcode_name = barcode_name;
-        res.normalized_barcode_name = barcode_kits::normalize_barcode_name(barcode_name);
-        res.kit = candidate.kit;
-        res.barcode_kit = candidate.barcode_kit;
-        if (rear_barcodes) {
-            res.bottom_flank_score = top_flank_score;
-            res.flank_score = res.bottom_flank_score;
-            res.bottom_penalty = top_mask_penalty_inner;
-            res.penalty = res.bottom_penalty;
-            res.use_top = false;
-            res.bottom_barcode_score =
-                    1.f - static_cast<float>(res.bottom_penalty) / barcode.length();
-            res.barcode_score = res.bottom_barcode_score;
-            int rear_start =
-                    std::max(0, (int)read_seq.length() - m_scoring_params.rear_barcode_window);
-            res.bottom_barcode_pos = {rear_start + top_result.startLocations[0],
-                                      rear_start + top_result.endLocations[0]};
-        } else {
-            res.top_flank_score = top_flank_score;
-            res.flank_score = res.top_flank_score;
-            res.top_penalty = top_mask_penalty_inner;
-            res.penalty = res.top_penalty;
-            res.use_top = true;
-            res.top_barcode_score = 1.f - static_cast<float>(res.top_penalty) / barcode.length();
-            res.barcode_score = res.top_barcode_score;
-            res.top_barcode_pos = {top_result.startLocations[0], top_result.endLocations[0]};
-        }
-        results_inner.emplace_back(std::move(res));
-    }
+    auto results = score_barcodes(candidate.barcodes1, candidate.barcode_names, top_left_buffer,
+                                  top_right_buffer, top_mask, "Checking barcode", "top window");
+    auto results_inner = score_barcodes(
+            candidate.barcodes_inner1, candidate.barcode_names_inner, top_left_buffer_inner,
+            top_right_buffer_inner, top_mask_inner, "Checking inner barcode", "top window inner");
 
     edlibFreeAlignResult(top_result);
+    if (!candidate.top_context_inner.empty()) {
+        edlibFreeAlignResult(top_result_inner);
+    }
     return std::make_pair(results, results_inner);
 }
 
@@ -1436,15 +1408,16 @@ BarcodeScoreResult BarcodeClassifier::find_best_barcode(
             if (dual_barcode) {
                 throw std::runtime_error("Unimplemented: Dual barcodes with different ends");
             }
-            auto out = calculate_barcode_score_different_double_ends(fwd, *candidate,
-                                                                     allowed_barcodes);
+            std::vector<BarcodeScoreResult> out = calculate_barcode_score_different_double_ends(
+                    fwd, *candidate, allowed_barcodes);
             results.insert(results.end(), out.begin(), out.end());
         } else {
             if (dual_barcode) {
                 std::tie(results, results_inner) =
                         calculate_barcode_score_double_ends_dual(fwd, *candidate, allowed_barcodes);
             } else {
-                auto out = calculate_barcode_score_double_ends(fwd, *candidate, allowed_barcodes);
+                std::vector<BarcodeScoreResult> out =
+                        calculate_barcode_score_double_ends(fwd, *candidate, allowed_barcodes);
                 results.insert(results.end(), out.begin(), out.end());
             }
         }
@@ -1453,8 +1426,8 @@ BarcodeScoreResult BarcodeClassifier::find_best_barcode(
             std::tie(results, results_inner) = calculate_barcode_score_dual(
                     fwd, *candidate, allowed_barcodes, kit.rear_only_barcodes);
         } else {
-            auto out = calculate_barcode_score(fwd, *candidate, allowed_barcodes,
-                                               kit.rear_only_barcodes);
+            std::vector<BarcodeScoreResult> out = calculate_barcode_score(
+                    fwd, *candidate, allowed_barcodes, kit.rear_only_barcodes);
             results.insert(results.end(), out.begin(), out.end());
         }
     }
