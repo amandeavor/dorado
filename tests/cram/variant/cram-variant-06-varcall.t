@@ -14,8 +14,6 @@ Internally call simple variants and run inference only on computed candidate reg
   > ### Remove the qual field because Torch results can vary slightly cross-platform.
   > cat ${in_expected} | grep -v "#" | cut -f 1-5,7-8 > out/expected.no_header.no_qual.vcf
   > cat out/variants.vcf | grep -v "#" | cut -f 1-5,7-8 > out/result.no_header.no_qual.vcf
-  > sort ${in_expected_proc_regions} > out/expected.processed_regions.sorted.bed
-  > sort out/processed_regions.bed > out/processed_regions.sorted.bed
   > diff out/expected.no_header.no_qual.vcf out/result.no_header.no_qual.vcf
-  > diff out/expected.processed_regions.sorted.bed out/processed_regions.sorted.bed
+  > diff ${in_expected_proc_regions} out/processed_regions.bed
   Exit code: 0

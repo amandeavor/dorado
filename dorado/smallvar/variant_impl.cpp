@@ -1411,6 +1411,21 @@ void worker_variant_calling_reduce(
                 }
                 intervals.emplace_back(start, end, seq_id);
             }
+
+            // Sort intervals.
+            std::sort(std::begin(intervals), std::end(intervals),
+                      [](const secondary::IntervalInt64& a, const secondary::IntervalInt64& b) {
+                          return std::tie(a.value, a.start, a.stop) <
+                                 std::tie(b.value, b.start, b.stop);
+                      });
+            // Dedup intervals.
+            const auto new_end = std::unique(
+                    std::begin(intervals), std::end(intervals),
+                    [](const secondary::IntervalInt64& a, const secondary::IntervalInt64& b) {
+                        return std::tie(a.value, a.start, a.stop) ==
+                               std::tie(b.value, b.start, b.stop);
+                    });
+            intervals.erase(new_end, intervals.end());
             reduce_data.processed_regions = std::move(intervals);
         }
 
