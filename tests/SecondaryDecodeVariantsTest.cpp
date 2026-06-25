@@ -107,6 +107,16 @@ CATCH_TEST_CASE("decode_variants", TEST_GROUP) {
         },
 
         TestCase{
+            "Return all reference positions (gVCF), one haplotype emits haploid reference genotype.",
+            "AC", {"AC"}, {0, 1}, {0, 0}, 3.0f, false, true, true, false, false,
+            {
+                Variant{0, 0, "A", {"."}, ".", {}, 70.0f, {{"GT", "0"}, {"GQ", "70"}}, 0, 1},
+                Variant{0, 1, "C", {"."}, ".", {}, 70.0f, {{"GT", "0"}, {"GQ", "70"}}, 1, 2},
+            },
+            false,
+        },
+
+        TestCase{
             "No variants, three haplotype.",
             "ACTG", {"ACTG", "ACTG", "ACTG"}, {0, 1, 2, 3}, {0, 0, 0, 0}, 3.0f, false, false, false, false, false, {}, false,
         },
@@ -295,7 +305,7 @@ CATCH_TEST_CASE("decode_variants", TEST_GROUP) {
             {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
             3.0f, false, false, false, false, false,
             {
-                Variant{0, 1, "AGCCATT", {"."}, ".", {}, 70.0f, {{"GT", "0"}, {"GQ", "70"}}, 1, 8},
+                Variant{0, 1, "AGCCATT", {"."}, ".", {}, 70.0f, {{"GT", "0/0"}, {"GQ", "70"}}, 1, 8},
             },
             false,
         },
@@ -309,7 +319,7 @@ CATCH_TEST_CASE("decode_variants", TEST_GROUP) {
             {0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
             3.0f, false, false, false, false, false,
             {
-                Variant{0, 0, "AGCCATT", {"."}, ".", {}, 70.0f, {{"GT", "0"}, {"GQ", "70"}}, 0, 7},
+                Variant{0, 0, "AGCCATT", {"."}, ".", {}, 70.0f, {{"GT", "0/0"}, {"GQ", "70"}}, 0, 7},
             },
             false,
         },
@@ -323,7 +333,7 @@ CATCH_TEST_CASE("decode_variants", TEST_GROUP) {
             {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
             3.0f, false, false, false, false, false,
             {
-                Variant{0, 6, "AGCCATT", {"."}, ".", {}, 70.0f, {{"GT", "0"}, {"GQ", "70"}}, 6, 13},
+                Variant{0, 6, "AGCCATT", {"."}, ".", {}, 70.0f, {{"GT", "0/0"}, {"GQ", "70"}}, 6, 13},
             },
             false,
         },
@@ -337,7 +347,7 @@ CATCH_TEST_CASE("decode_variants", TEST_GROUP) {
             {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
             3.0f, true, false, false, false, false,
             {
-                Variant{0, 1, "NNNNNAGCCATT", {"."}, ".", {}, 70.0f, {{"GT", "0"}, {"GQ", "70"}}, 1, 13},
+                Variant{0, 1, "NNNNNAGCCATT", {"."}, ".", {}, 70.0f, {{"GT", "0/0"}, {"GQ", "70"}}, 1, 13},
             },
             false,
         },
@@ -351,7 +361,7 @@ CATCH_TEST_CASE("decode_variants", TEST_GROUP) {
             {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
             3.0f, true, false, false, false, false,
             {
-                Variant{0, 0, "NNNNNAGCCATT", {"."}, ".", {}, 70.0f, {{"GT", "0"}, {"GQ", "70"}}, 0, 12},
+                Variant{0, 0, "NNNNNAGCCATT", {"."}, ".", {}, 70.0f, {{"GT", "0/0"}, {"GQ", "70"}}, 0, 12},
             },
             false,
         },
@@ -496,9 +506,9 @@ CATCH_TEST_CASE("decode_variants", TEST_GROUP) {
             {0, 0, 0, 0, 0, 0, 1, 0, 0, 0},
             3.0f, false, false, false, false, false,
             {
-                Variant{0, 3, "A", {"."}, ".", {}, 70.0f, {{"GT", "0"}, {"GQ", "70"}}, 3, 4},           // V1
-                Variant{0, 5, "AA", {"."}, ".", {}, 70.0f, {{"GT", "0"}, {"GQ", "70"}}, 5, 8},          // V2
-                Variant{0, 8, "A", {"."}, ".", {}, 70.0f, {{"GT", "0"}, {"GQ", "70"}}, 9, 10},          // V3
+                Variant{0, 3, "A", {"."}, ".", {}, 70.0f, {{"GT", "0/0"}, {"GQ", "70"}}, 3, 4},           // V1
+                Variant{0, 5, "AA", {"."}, ".", {}, 70.0f, {{"GT", "0/0"}, {"GQ", "70"}}, 5, 8},          // V2
+                Variant{0, 8, "A", {"."}, ".", {}, 70.0f, {{"GT", "0/0"}, {"GQ", "70"}}, 9, 10},          // V3
             },
             false,
         },
@@ -568,9 +578,9 @@ CATCH_TEST_CASE("decode_variants", TEST_GROUP) {
             {0, 0, 0, 0, 0, 0, 1, 0, 0, 0},
             3.0f, false, false, false, false, false,
             {
-                Variant{0, 3, "A", {"."}, ".", {}, 70.0f, {{"GT", "0"}, {"GQ", "70"}}, 3, 4},           // V1
-                Variant{0, 5, "AA", {"."}, ".", {}, 70.0f, {{"GT", "0"}, {"GQ", "70"}}, 5, 8},          // V2
-                Variant{0, 8, "A", {"."}, ".", {}, 70.0f, {{"GT", "0"}, {"GQ", "70"}}, 9, 10},          // V3
+                Variant{0, 3, "A", {"."}, ".", {}, 70.0f, {{"GT", "0/0"}, {"GQ", "70"}}, 3, 4},           // V1
+                Variant{0, 5, "AA", {"."}, ".", {}, 70.0f, {{"GT", "0/0"}, {"GQ", "70"}}, 5, 8},          // V2
+                Variant{0, 8, "A", {"."}, ".", {}, 70.0f, {{"GT", "0/0"}, {"GQ", "70"}}, 9, 10},          // V3
             },
             false,
         },
@@ -660,9 +670,9 @@ CATCH_TEST_CASE("decode_variants", TEST_GROUP) {
             {0, 0, 0, 0, 0, 0, 1, 0, 0, 0},
             3.0f, false, false, false, false, false,
             {
-                Variant{0, 3, "A", {"."}, ".", {}, 70.0f, {{"GT", "0"}, {"GQ", "70"}}, 3, 4},       // V1
-                Variant{0, 5, "AA", {"."}, ".", {}, 70.0f, {{"GT", "0"}, {"GQ", "70"}}, 5, 8},      // V2
-                Variant{0, 8, "A", {"."}, ".", {}, 70.0f, {{"GT", "0"}, {"GQ", "70"}}, 9, 10},      // V3
+                Variant{0, 3, "A", {"."}, ".", {}, 70.0f, {{"GT", "0/0"}, {"GQ", "70"}}, 3, 4},       // V1
+                Variant{0, 5, "AA", {"."}, ".", {}, 70.0f, {{"GT", "0/0"}, {"GQ", "70"}}, 5, 8},      // V2
+                Variant{0, 8, "A", {"."}, ".", {}, 70.0f, {{"GT", "0/0"}, {"GQ", "70"}}, 9, 10},      // V3
             },
             false,
         },
@@ -734,7 +744,11 @@ CATCH_TEST_CASE("decode_variants", TEST_GROUP) {
 
     CATCH_INFO(TEST_GROUP << " Test name: " << test_case.test_name);
 
-    const DecoderBase decoder(LabelSchemeType::HAPLOID);
+    const LabelSchemeType label_scheme = (std::size(test_case.consensus_seqs) == 1)
+                                                 ? LabelSchemeType::HAPLOID
+                                                 : LabelSchemeType::DIPLOID;
+
+    const DecoderBase decoder(label_scheme);
 
     // Sanity check that lengths of all elements of the test are good.
     const size_t expected_len = std::size(test_case.ref_seq_with_gaps);

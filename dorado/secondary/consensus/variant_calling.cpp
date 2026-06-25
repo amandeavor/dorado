@@ -647,8 +647,16 @@ Variant normalize_genotype(const Variant& var, const int32_t ploidy, const float
     // This is a gVCF record.
     if (std::empty(var.alts) || (var.filter == ".") ||
         (var.alts == std::vector<std::string>{"."})) {
+        std::ostringstream oss_gt;
+        for (int32_t i = 0; i < ploidy; ++i) {
+            if (i > 0) {
+                oss_gt << '/';
+            }
+            oss_gt << '0';
+        }
+
         ret.alts = {"."};
-        ret.genotype = {{"GT", "0"}, {"GQ", std::to_string(gq)}};
+        ret.genotype = {{"GT", oss_gt.str()}, {"GQ", std::to_string(gq)}};
         ret.filter = ".";
         return ret;
     }

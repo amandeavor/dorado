@@ -461,7 +461,7 @@ CATCH_TEST_CASE("variant_impl workflow worker functions", TEST_GROUP) {
                 },
                 123, 2, 3.0f,
                 {
-                    secondary::Variant{123, 5, "A", {"."}, ".", {}, 60.0f, {{"GT", "0"}, {"GQ", "60"}}, 0, 0},
+                    secondary::Variant{123, 5, "A", {"."}, ".", {}, 60.0f, {{"GT", "0/0"}, {"GQ", "60"}}, 0, 0},
                 },
             },
             TestCase{
