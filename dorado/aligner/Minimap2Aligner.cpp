@@ -559,6 +559,11 @@ std::vector<AlignmentResult> Minimap2Aligner::align_impl(dorado::ReadCommon& rea
 
     auto index = m_minimap_index->index(idx_no);
     for (int reg_idx = 0; reg_idx < n_regs; ++reg_idx) {
+        if (const mm_reg1_t* r = &regs[reg_idx];
+            (map_opts.flag & MM_F_NO_PRINT_2ND) && r->id != r->parent) {
+            continue;
+        }
+
         kstring_t alignment_line{0, 0, nullptr};
         mm_write_sam3(&alignment_line, index, &query, 0, reg_idx, 1, &n_regs, &regs, NULL,
                       map_opts.flag, buffer->rep_len);
