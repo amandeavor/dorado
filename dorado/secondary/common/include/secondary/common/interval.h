@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <tuple>
 
 namespace dorado::secondary {
 
@@ -15,6 +16,11 @@ struct IntervalGeneric {
 template <typename T>
 bool operator==(const IntervalGeneric<T>& a, const IntervalGeneric<T>& b) {
     return (a.start == b.start) && (a.end == b.end);
+}
+
+template <typename T>
+bool operator<(const IntervalGeneric<T>& a, const IntervalGeneric<T>& b) {
+    return std::tie(a.start, a.end) < std::tie(b.start, b.end);
 }
 
 using Interval = IntervalGeneric<int32_t>;
