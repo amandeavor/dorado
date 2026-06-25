@@ -1261,7 +1261,7 @@ BarcodeClassifier::calculate_barcode_score_dual(std::string_view read_seq,
         std::vector<BarcodeScoreResult> barcode_results;
         barcode_results.reserve(barcodes.size());
         for (size_t i = 0; i < barcodes.size(); i++) {
-            const auto barcode = left_buffer + barcodes[i] + right_buffer;
+            const auto barcode = std::string(left_buffer).append(barcodes[i]).append(right_buffer);
             const auto& barcode_name = barcode_names[i];
 
             if (!barcode_is_permitted(allowed_barcodes, barcode_name)) {
