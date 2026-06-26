@@ -13,10 +13,14 @@ namespace dorado::utils {
 
 // A single chunk
 struct Chunk {
-    Chunk(size_t offset, size_t chunk_size) : input_offset(offset), raw_chunk_size(chunk_size) {}
+    Chunk(size_t offset, size_t chunk_size, size_t chunk_granularity)
+            : input_offset(offset),
+              raw_chunk_size(chunk_size),
+              chunk_size_granularity(chunk_granularity) {}
 
     size_t input_offset;    // Where does this chunk start in the input raw read data
     size_t raw_chunk_size;  // Just for knowing the original chunk size
+    size_t chunk_size_granularity;  // For stitching, raw_chunk_size is padded to granularity when basecalling
 
     std::string seq;
     std::string qstring;

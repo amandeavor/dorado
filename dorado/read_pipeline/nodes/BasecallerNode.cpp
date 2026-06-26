@@ -32,8 +32,9 @@ struct BasecallerNode::BasecallingChunk : utils::Chunk {
     BasecallingChunk(std::shared_ptr<BasecallingRead> owner,
                      size_t offset,
                      size_t chunk_in_read_idx,
-                     size_t chunk_size)
-            : Chunk(offset, chunk_size),
+                     size_t chunk_size,
+                     size_t chunk_granularity)
+            : Chunk(offset, chunk_size, chunk_granularity),
               owning_read(std::move(owner)),
               idx_in_read(chunk_in_read_idx) {}
 
@@ -139,7 +140,8 @@ void BasecallerNode::input_thread_fn() {
             for (std::size_t i = 0; i < std::size(intervals); ++i) {
                 read_chunks.emplace_back(std::make_unique<BasecallingChunk>(
                         working_read, intervals[i].first, i,
-                        intervals[i].second - intervals[i].first));
+                        intervals[i].second - intervals[i].first,
+                        m_is_tx_model ? m_chunk_size_granularity : m_model_stride));
             }
         } else {
             const std::vector<std::size_t> offsets =
@@ -147,7 +149,7 @@ void BasecallerNode::input_thread_fn() {
             read_chunks.reserve(std::size(offsets));
             for (std::size_t i = 0; i < std::size(offsets); ++i) {
                 read_chunks.emplace_back(std::make_unique<BasecallingChunk>(
-                        working_read, offsets[i], i, chunk_size));
+                        working_read, offsets[i], i, chunk_size, 1));
             }
         }
 
