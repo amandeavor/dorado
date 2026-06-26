@@ -54,6 +54,11 @@ private:
             const BarcodeCandidateKit& candidate,
             const BarcodeFilterSet& allowed_barcodes,
             bool rear_barcodes) const;
+    std::pair<std::vector<BarcodeScoreResult>, std::vector<BarcodeScoreResult>>
+    calculate_barcode_score_dual(std::string_view read_seq,
+                                 const BarcodeCandidateKit& candidate,
+                                 const BarcodeFilterSet& allowed_barcodes,
+                                 bool rear_barcodes) const;
     BarcodeScoreResult find_best_barcode(const std::string& read_seq,
                                          const std::vector<BarcodeCandidateKit>& adapter,
                                          bool barcode_both_ends,

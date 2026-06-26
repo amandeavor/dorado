@@ -6,15 +6,10 @@ kit = "EXP-DUAL00"
 mask1_front = "AAGGTTAA"
 mask1_mid = "CAGCACCTGGTGCTG"
 mask1_rear = "TTAACCTACTTGCCTGTCGCTCTATCTTC"
-mask2_front = "AAGGTTAA"
-mask2_mid = "CAGCACCTGGTGCTG"
-mask2_rear = "TTAACCTACTTGCCTGTCGCTCTATCTTC"
 
 # Barcode sequences
 barcode1_pattern = "NB%02i"
-barcode2_pattern = "NB%02i"
 barcode_inner1_pattern = "BC%02i"
-barcode_inner2_pattern = "BC%02i"
 first_index = 1
 last_index = 24
 first_index_inner = 1
