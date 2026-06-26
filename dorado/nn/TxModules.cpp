@@ -27,12 +27,6 @@ extern "C" {
 
 namespace {
 
-void save_tensor(const torch::Tensor &t, const std::string &file_path) {
-    auto cpu_copy = t.to(torch::kCPU);
-    torch::save(cpu_copy, file_path);
-    std::cerr << "Wrote tensor to " << file_path << '\n';
-}
-
 struct KoiTensorExt : public KoiTensor {
     KoiTensorExt(const at::Tensor &t, const std::vector<int> &dim_tags) { init(t, dim_tags); }
     KoiTensorExt(const at::Tensor &t,
@@ -821,9 +815,6 @@ TxEncoderStackImpl::TxEncoderStackImpl(const TxEncoderParams &params,
     use_koi_tiled = (is_sup_model || is_hyp_model) && options.device().is_cuda() &&
                     (koi_tc_is_available(KOI_F16) == KOI_SUCCESS);
     spdlog::debug("TxEncoderStack: use_koi_tiled {}.", use_koi_tiled);
-    use_vcs = is_sup_model && options.device().is_cuda() &&
-              (koi_tc_is_available(KOI_F16) == KOI_SUCCESS) &&
-              utils::get_dev_opt<bool>("koi_use_vcs_sup", true);
 
 #if !DORADO_ORIN && (CUDA_VERSION / 1000) < 13
     // Custom Volta flag
@@ -846,15 +837,17 @@ at::Tensor TxEncoderStackImpl::forward(const at::Tensor &x, [[maybe_unused]] Aux
 #if DORADO_CUDA_BUILD
     if (use_koi_tiled) {
         int N, T, C;
-        if (use_vcs && aux) {
+        if (aux) {
             // N = total amount of chunk_size_granularity within batch
             // T = chunk_size_granularity which is min_chunksize / ConvStack_stride
             N = aux->total_num_granularity();
-            T = aux->chunk_size_granularity();  // This value gets updated according to ConvLayers stride in ConvStackImpl::run_koi_vcs_tx
-            C = static_cast<int>(x.size(0) * 8);  // Underlying input layout is (C / 8, M_in, 8)
+            T = aux->chunk_size_granularity_tx_enc();
+            C = static_cast<int>(x.size(0) *
+                                 x.size(2));  // Underlying input layout is (C / 8, M_in, 8)
 
             // Why do this? Koi's linear.cu MatMulOp implementation requires M to be a multiple of 256
-            N += ((N % 4) == 0) ? 0 : (4 - (N % 4));
+            int p = 256 / T;
+            N += ((N % p) == 0) ? 0 : (p - (N % p));
             if (N > aux->max_num_granularity()) {
                 spdlog::error(
                         "Tx Encoder total_num_granularity is exceeding "
@@ -876,7 +869,7 @@ at::Tensor TxEncoderStackImpl::forward(const at::Tensor &x, [[maybe_unused]] Aux
         at::Tensor tiled_f16;
         {
             utils::ScopedProfileRange spr("Tile F16", 2);
-            if (use_vcs && aux) {
+            if (aux) {
                 // Underlying input layout is (C / 8, M_in, 8)
                 tiled_f16 = x.narrow(1, 0, N * T)
                                     .view({C / 8, N, T / 16, 16, 8})

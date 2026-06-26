@@ -396,7 +396,7 @@ at::Tensor ConvStackImpl::ConvLayer::run_koi_vcs_tx(at::Tensor &conv_input, Auxi
 
     // First convolution always accumulates in fp16
     const bool use_f32_accum =
-            (conv_layer_num > 0) && utils::get_dev_opt<bool>("koi_tx_vcs_conv_f32_accum", true);
+            (conv_layer_num > 0) && utils::get_dev_opt<bool>("koi_tx_vcs_conv_f32_accum", false);
 
     if (!w_device.defined()) {
         // conv->weight is [C_out, C_in, W], we want [C_out, W, C_in] and then further tiling
@@ -428,7 +428,7 @@ at::Tensor ConvStackImpl::ConvLayer::run_koi_vcs_tx(at::Tensor &conv_input, Auxi
         if (conv_layer_num != 4) {
             M_out = (M_out / stride) + (aux->max_num_granularity() * next_layer_padding);
         } else {
-            M_out = aux->qkv_rope_lut.size(0) * 64;
+            M_out = aux->qkv_rope_lut.size(0) * aux->chunk_size_granularity_tx_enc();
         }
     }
     if (conv_output.numel() < M_out * C_out) {

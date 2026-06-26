@@ -61,25 +61,27 @@ std::unique_ptr<nn::AuxiliaryData> create_empty_input(at::Tensor &in,
                                                       const config::BasecallModelConfig &config,
                                                       nn::KoiThreads &thread_pool) {
     const std::int32_t C = config.num_features;
-    const std::int32_t stride = config.stride;
+    const std::int32_t stride_out = config.stride;
+    const std::int32_t stride_in = config.stride_inner();
     const std::int32_t chunk_size_granularity = config.chunk_size_granularity();
     const std::int32_t max_chunk_size = config.basecaller.chunk_size();
     const bool is_tx_model = config.is_tx_model();
     if (is_tx_model) {
-        // This is absolute worse-case scenario, where all reads are <= chunk_size_granularity
+        int first_conv_padding = config.convs[0].winlen / 2;
         assert((T % chunk_size_granularity) == 0);
-        in = torch::empty({C, (N * T) + (N * (T / chunk_size_granularity) * 4)}, in_options);
+        in = torch::empty({C, (N * T) + (N * (T / chunk_size_granularity) * first_conv_padding)},
+                          in_options);
     } else {
         in = torch::empty({1, C, N * T}, in_options);
         auto workspace_options =
                 at::TensorOptions().device(torch::kCPU).pinned_memory(true).dtype(torch::kInt32);
         // for workspace size see koi/utils_lstm.h
-        workspace = torch::empty({6 * ((T / stride) + 3) * N}, workspace_options);
+        workspace = torch::empty({6 * ((T / stride_out) + 3) * N}, workspace_options);
     }
 
-    auto aux = std::make_unique<nn::AuxiliaryData>(workspace, N, T, stride, chunk_size_granularity,
-                                                   std::vector<std::int32_t>(N, T), max_chunk_size,
-                                                   is_tx_model);
+    auto aux = std::make_unique<nn::AuxiliaryData>(
+            workspace, N, T, stride_out, stride_in, chunk_size_granularity,
+            std::vector<std::int32_t>(N, T), max_chunk_size, is_tx_model);
     aux->create_auxiliary_data(in_options.device(), thread_pool);
     return aux;
 }

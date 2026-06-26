@@ -299,22 +299,6 @@ void BasecallerNode::basecall_worker_thread(int worker_id) {
 #endif
     at::InferenceMode inference_mode_guard;
 
-    /*
-    Comments to be deleted regarding Tx VCS
-    If doing Tx VCS, chunk_size below should be max_chunk_size, determined somehow from the model config.toml's chunksize
-    Now, batch_size gets determined using this max_chunk_size within CudaCaller's determine_batch_dims and calculate_batch_dims,
-    where, if I understood right, batch_size = max allowed of max_chunk_size chunks given gpu memory, in multiples of 32 for tx.
-    I'm thinking we can use batch_size * chunk_size (max_chunk_size) here to determine when a batch is filled for Tx VCS.
-    We know how much of allowed N * T we have filled through BatchedChunks' chunks_size right?
-    If adding the next chunk to current batch would make us go past N * T, then basecall_current_batch and repeat, if not, keep filling current batch
-
-    Additionally, given batch_size * chunk_size determines max_allowed_input_length for VCS Tx, chunks_size must also account for padding!
-    Different convolution layers have different padding, but we are only interested in the "worse-case scenario", aka the layer with the biggest padding
-    as that is the one that will determine wether current batch is full or not. Given the strategy is: [padding, varlen_chunk, padding, varlen_chunk, padding]
-    Then acquire max_conv_padding, add initial padding to chunks_size before filling current_batch, and when checking if adding next chunk
-    would fill current_batch, check with max_conv_padding.
-    */
-
     const size_t batch_size = m_model_runners[worker_id]->batch_size();
     const size_t chunk_size = m_model_runners[worker_id]->chunk_size();
     const bool is_low_latency = m_model_runners[worker_id]->is_low_latency();

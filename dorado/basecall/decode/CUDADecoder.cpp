@@ -42,7 +42,7 @@ DecodeData CUDADecoder::beam_search_part_1(DecodeData data) const {
         } else {
             // N IS TOTAL_NUM_VARLEN_CHUNKS
             N_ = N;
-            data.aux->device_chunk_table.floor_divide_(6);
+            data.aux->device_chunk_table.floor_divide_(data.aux->stride_out());
         }
         chunks = at::empty({N_, 4}, tensor_options_int32);
         auto chunks_slice = chunks.slice(0, 0, N);
@@ -65,8 +65,7 @@ DecodeData CUDADecoder::beam_search_part_1(DecodeData data) const {
     at::Tensor aux;
     at::Tensor path;
     at::Tensor moves_sequence_qstring;
-    if (data.aux &&
-        (data.aux->device_in_layout.defined() || data.aux->device_chunk_table.defined())) {
+    if (data.aux) {
         if (data.aux->is_lstm_or_flstm_model()) {
             // lstm VCS
             const std::int32_t T_ = data.aux->NT_out_max();
@@ -145,7 +144,6 @@ std::vector<DecodedChunk> CUDADecoder::beam_search_part_2(const DecodeData &data
 
     std::vector<DecodedChunk> called_chunks;
 
-    // TODO: Does this need changing for Tx VCS?
     // N = total_num_varlen_chunks for Tx VCS too
     if (data.aux) {
         const std::span<const std::int32_t> chunk_sizes(data.aux->chunk_sizes());

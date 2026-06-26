@@ -1,6 +1,7 @@
 #include "nn/AuxiliaryData.h"
 
 #include "nn/KoiThreads.h"
+#include "utils/math_utils.h"
 
 #include <ATen/ops/empty.h>
 #include <ATen/ops/from_blob.h>
@@ -22,7 +23,8 @@ namespace nn {
 AuxiliaryData::AuxiliaryData(at::Tensor workspace,
                              const std::int32_t batch_size,
                              const std::int32_t chunk_size,
-                             const std::int32_t stride,
+                             const std::int32_t stride_out,
+                             const std::int32_t stride_in,
                              const std::int32_t chunk_size_granularity,
                              const std::span<const std::int32_t> chunk_sizes,
                              const std::int32_t max_chunk_size,
@@ -30,9 +32,10 @@ AuxiliaryData::AuxiliaryData(at::Tensor workspace,
         : workspace_(std::move(workspace)),
           N_(batch_size),
           T_in_(chunk_size),
-          T_out_(chunk_size / stride),
+          T_out_(chunk_size / stride_out),
           T_lstm_(1 + T_out_ + 1),
-          stride_(stride),
+          stride_out_(stride_out),
+          stride_in_(stride_in),
           chunk_sizes_(std::cbegin(chunk_sizes), std::cend(chunk_sizes)),
           chunk_size_granularity_(chunk_size_granularity),
           max_chunk_size_(max_chunk_size),
@@ -53,7 +56,7 @@ AuxiliaryData::AuxiliaryData(at::Tensor workspace,
                 (total_num_granularity_ + cs_blocks) * chunk_size_granularity_;
         total_num_granularity_ += cs_blocks;
         ++i;
-        cs /= stride;
+        cs /= stride_out_;
     }
 }
 
@@ -122,14 +125,16 @@ void AuxiliaryData::create_auxiliary_data([[maybe_unused]] const c10::Device& de
             return;
         }
 
+        max_num_granularity_ = NT_in_max() / chunk_size_granularity_;
+        chunk_size_granularity_tx_enc_ = chunk_size_granularity_ / stride_in_;
+
         conv_load_lut = at::empty({total_num_granularity_}, gpu_options);
         conv_store_lut = at::empty({total_num_granularity_}, gpu_options);
 
-        // pad to be a multiple of 4, so as if input was multiple of 256
-        int qkv_rope_lut_size = ((total_num_granularity_ + 3) / 4) * 4;
+        // Koi's MatMulOp requires inputs to be a multiple of 256
+        int p = 256 / chunk_size_granularity_tx_enc_;
+        int qkv_rope_lut_size = utils::pad_to(total_num_granularity_, p);
         qkv_rope_lut = at::zeros({qkv_rope_lut_size}, gpu_options);
-
-        max_num_granularity_ = NT_in_max() / chunk_size_granularity_;
 
         // Why is qkv_rope_lut intialised with zeros?
         // qkv_rope gets sincos values according to T value within lut
