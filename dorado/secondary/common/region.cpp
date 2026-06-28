@@ -26,7 +26,37 @@ bool operator<(const Region& l, const Region& r) {
 std::string region_to_string(const Region& region) {
     std::ostringstream oss;
     oss << region;
-    return oss.str();
+    return std::move(oss).str();
+}
+
+std::ostream& operator<<(std::ostream& os, const RegionInt& region) {
+    os << region.seq_id << ':' << (region.start + 1) << '-' << region.end;
+    return os;
+}
+
+std::string region_to_string(const RegionInt& region) {
+    std::ostringstream oss;
+    oss << region;
+    return std::move(oss).str();
+}
+
+bool is_valid(const RegionInt& region) {
+    if ((region.seq_id < 0) || (region.start < -1) || (region.end < -1)) {
+        return false;
+    }
+    return (region.start < 0) || (region.end < 0) || (region.start < region.end);
+}
+
+RegionInt normalize_region(const RegionInt& region, const int64_t seq_len) {
+    if (!is_valid(region)) {
+        throw std::runtime_error{"Cannot normalize a region that is not valid. Given: " +
+                                 region_to_string(region)};
+    }
+    return RegionInt{
+            .seq_id = region.seq_id,
+            .start = std::clamp<int64_t>(region.start, 0, seq_len),
+            .end = (region.end < 0) ? seq_len : std::clamp<int64_t>(region.end, 0, seq_len),
+    };
 }
 
 Region parse_region_string(const std::string& region) {
