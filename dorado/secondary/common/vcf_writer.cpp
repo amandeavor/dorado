@@ -77,9 +77,6 @@ VCFWriter::VCFWriter(const std::filesystem::path& in_fn,
         throw std::runtime_error("Failed to add sample: SAMPLE");
     }
 
-    // Add column headers
-    bcf_hdr_append(m_header.get(), "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tSAMPLE");
-
     // Write the header to the file
     if (bcf_hdr_write(m_vcf_fp.get(), m_header.get()) < 0) {
         throw std::runtime_error("Failed to write VCF header.");
