@@ -47,13 +47,6 @@ VCFWriter::VCFWriter(const std::filesystem::path& in_fn,
     // Set the VCF format version
     bcf_hdr_set_version(m_header.get(), "VCFv4.2");
 
-    // Add contig information
-    for (const auto& [name, length] : contigs) {
-        const std::string contig_entry =
-                "##contig=<ID=" + name + ",length=" + std::to_string(length) + ">";
-        bcf_hdr_append(m_header.get(), contig_entry.c_str());
-    }
-
     // Add FILTER entries.
     for (const auto& [id, description] : filters) {
         const auto filter_entry = std::string("##FILTER=<ID=")
@@ -62,6 +55,13 @@ VCFWriter::VCFWriter(const std::filesystem::path& in_fn,
                                           .append(description)
                                           .append("\">");
         bcf_hdr_append(m_header.get(), filter_entry.c_str());
+    }
+
+    // Add contig information
+    for (const auto& [name, length] : contigs) {
+        const std::string contig_entry =
+                "##contig=<ID=" + name + ",length=" + std::to_string(length) + ">";
+        bcf_hdr_append(m_header.get(), contig_entry.c_str());
     }
 
     // Add mandatory INFO and FORMAT fields

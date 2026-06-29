@@ -924,7 +924,8 @@ void run_polishing(const Options& opt,
     if (opt.run_variant_calling) {
         // These are the only available FILTER options.
         const std::vector<std::pair<std::string, std::string>> filters{
-                {"PASS", "All filters passed"},
+                // PASS is added automatically by bcf_hdr
+                // {"PASS", "All filters passed"},
                 {"LowQual", "Variant quality is below threshold"},
                 {".", "Non-variant position"},
         };
