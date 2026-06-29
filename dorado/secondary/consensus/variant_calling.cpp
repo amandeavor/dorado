@@ -128,83 +128,44 @@ float compute_subseq_log_prob(
 }
 
 /**
- * \brief Utility function to compute the maximum log probability of a reference sequence
+ * \brief Utility function to compute the phred-scaled log-likelihood of a given set of sequences
  *          occurring for any input haplotype.
- *          If there is more than one haplotype, log prob is computed for every haplotype
- *          and only the maximum value is returned.
  * \param probs_3D A 3D tensor of probabilities (output of inference) for a single sample (not batch).
  *                  Dimensions: [seq_len x num_haplotypes x num_classes].
- * \param ref_seq_with_gaps Input sequence, used to access class probabilities.
+ * \param sequences Input sequences, used to access class probabilities.
  * \param symbol_lookup Lookup table of symbol chars (bases) -> numeric ID of that symbol, to encode sequence bases into class IDs.
  * \param rstart Region start (start of the subsequence in seq). Zero-based.
  * \param rend Region end (end of the subsequence in seq). Non-inclusive.
- * \returns Maximum log probability of the reference sequence occurring for any input haplotype predictions.
+ * \returns Phred-scaled quality for a given set of input sequences.
  */
-float compute_ref_quality(
+float compute_quality_from_probs(
         const at::Tensor& probs_3D,  // Probabilities for a single sample (not batch).
-        const std::string_view ref_seq_with_gaps,
+        const std::span<std::string_view> sequences,
         const std::array<int32_t, 256>& symbol_lookup,
         const int64_t rstart,
         const int64_t rend) {
     if (std::size(probs_3D.sizes()) != 3) {
         throw std::runtime_error(
-                "Tensor of probabilities given to compute_quality is of wrong shape. Input "
+                "Tensor of probabilities given to compute_quality_from_probs is of wrong shape. "
+                "Input "
                 "shape: " +
                 utils::tensor_shape_as_string(probs_3D) + ", but expected 3 dimensions.");
     }
 
     const int64_t num_haplotypes = probs_3D.size(1);
 
-    float ret = 0.0f;
-    for (int64_t hap_id = 0; hap_id < num_haplotypes; ++hap_id) {
-        const float log_prob = compute_subseq_log_prob(probs_3D, ref_seq_with_gaps, symbol_lookup,
-                                                       rstart, rend, hap_id, true);
-        ret = (hap_id == 0) ? log_prob : std::max(ret, log_prob);
-    }
-    ret = phred(1.0f - std::exp(ret), VCF_MAX_GQ_CAP);
-
-    ret = std::max(0.0f, ret);
-
-    return ret;
-}
-
-/**
- * \brief Utility function to compute the log probability of a predicted sequence across all haplotypes (accumulated).
- * \param probs_3D A 3D tensor of probabilities (output of inference) for a single sample (not batch).
- *                  Dimensions: [seq_len x num_haplotypes x num_classes].
- * \param ref_seq_with_gaps Input sequence, used to access class probabilities.
- * \param symbol_lookup Lookup table of symbol chars (bases) -> numeric ID of that symbol, to encode sequence bases into class IDs.
- * \param rstart Region start (start of the subsequence in seq). Zero-based.
- * \param rend Region end (end of the subsequence in seq). Non-inclusive.
- * \returns Log probability of the predicted sequence occurring across all haplotypes in the input prob tensor.
- */
-float compute_consensus_quality(
-        const at::Tensor& probs_3D,  // Probabilities for a single sample (not batch).
-        const std::vector<ConsensusResult>& cons_seqs_with_gaps,
-        const std::array<int32_t, 256>& symbol_lookup,
-        const int64_t rstart,
-        const int64_t rend) {
-    if (std::size(probs_3D.sizes()) != 3) {
+    if (std::ssize(sequences) != num_haplotypes) {
         throw std::runtime_error(
-                "Tensor of probabilities given to compute_quality is of wrong shape. Input "
-                "shape: " +
-                utils::tensor_shape_as_string(probs_3D) + ", but expected 3 dimensions.");
-    }
-
-    const int64_t num_haplotypes = probs_3D.size(1);
-
-    if (std::ssize(cons_seqs_with_gaps) != num_haplotypes) {
-        throw std::runtime_error(
-                "Number of haplotypes in the tensor differs from the number of haplotype consensus "
-                "sequences provided to compute_consensus_quality. Tensor shape: " +
-                utils::tensor_shape_as_string(probs_3D) + ", number of consensus sequences: " +
-                std::to_string(std::size(cons_seqs_with_gaps)));
+                "Number of haplotypes in the tensor differs from the number of "
+                "sequences provided to compute_quality_from_probs. Tensor shape: " +
+                utils::tensor_shape_as_string(probs_3D) +
+                ", number of sequences: " + std::to_string(std::size(sequences)));
     }
 
     float total = 0.0f;
     for (int64_t hap_id = 0; hap_id < num_haplotypes; ++hap_id) {
-        const float log_prob = compute_subseq_log_prob(probs_3D, cons_seqs_with_gaps[hap_id].seq,
-                                                       symbol_lookup, rstart, rend, hap_id, false);
+        const float log_prob = compute_subseq_log_prob(probs_3D, sequences[hap_id], symbol_lookup,
+                                                       rstart, rend, hap_id, false);
         total += log_prob;
     }
     total = phred(1.0f - std::exp(total), VCF_MAX_GQ_CAP);
@@ -212,6 +173,60 @@ float compute_consensus_quality(
     total = std::max(0.0f, total);
 
     return total;
+}
+
+/**
+ * \brief Utility function to compute a quality score for the assertion that all haplotypes in a region are the reference sequence.
+ *        This is the phred-scaled log-likelihood over the predictions that any allele is not reference.
+ * \param probs_3D A 3D tensor of probabilities (output of inference) for a single sample (not batch).
+ *                  Dimensions: [seq_len x num_haplotypes x num_classes].
+ * \param ref_seq_with_gaps Input sequence, used to access class probabilities.
+ * \param symbol_lookup Lookup table of symbol chars (bases) -> numeric ID of that symbol, to encode sequence bases into class IDs.
+ * \param rstart Region start (start of the subsequence in seq). Zero-based.
+ * \param rend Region end (end of the subsequence in seq). Non-inclusive.
+ * \returns Phred-scaled quality for all haplotypes being reference given input haplotype predictions.
+ */
+float compute_ref_quality(
+        const at::Tensor& probs_3D,  // Probabilities for a single sample (not batch).
+        const std::string_view ref_seq_with_gaps,
+        const std::array<int32_t, 256>& symbol_lookup,
+        const int64_t rstart,
+        const int64_t rend) {
+    const int64_t num_haplotypes = probs_3D.size(1);
+
+    std::vector<std::string_view> seqs;
+    seqs.reserve(num_haplotypes);
+    for (int64_t hap_id = 0; hap_id < num_haplotypes; ++hap_id) {
+        seqs.emplace_back(ref_seq_with_gaps);
+    }
+
+    return compute_quality_from_probs(probs_3D, seqs, symbol_lookup, rstart, rend);
+}
+
+/**
+ * \brief Utility function to compute a quality score for the assertion that the haplotypes in a region are the consensus sequences.
+ *        This is the phred-scaled log-likelihood over the predictions that any predicted allele is wrong.
+ * \param probs_3D A 3D tensor of probabilities (output of inference) for a single sample (not batch).
+ *                  Dimensions: [seq_len x num_haplotypes x num_classes].
+ * \param ref_seq_with_gaps Input sequence, used to access class probabilities.
+ * \param symbol_lookup Lookup table of symbol chars (bases) -> numeric ID of that symbol, to encode sequence bases into class IDs.
+ * \param rstart Region start (start of the subsequence in seq). Zero-based.
+ * \param rend Region end (end of the subsequence in seq). Non-inclusive.
+ * \returns Phred-scaled quality for the predicted haplotype sequences.
+ */
+float compute_consensus_quality(
+        const at::Tensor& probs_3D,  // Probabilities for a single sample (not batch).
+        const std::vector<ConsensusResult>& cons_seqs_with_gaps,
+        const std::array<int32_t, 256>& symbol_lookup,
+        const int64_t rstart,
+        const int64_t rend) {
+    std::vector<std::string_view> seqs;
+    seqs.reserve(std::size(cons_seqs_with_gaps));
+    for (int64_t i = 0; i < std::ssize(cons_seqs_with_gaps); ++i) {
+        seqs.emplace_back(cons_seqs_with_gaps[i].seq);
+    }
+
+    return compute_quality_from_probs(probs_3D, seqs, symbol_lookup, rstart, rend);
 }
 
 Variant construct_variant(const std::string_view draft,
