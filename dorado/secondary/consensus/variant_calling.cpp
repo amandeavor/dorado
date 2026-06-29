@@ -161,7 +161,7 @@ float compute_ref_quality(
                                                        rstart, rend, hap_id, true);
         ret = (hap_id == 0) ? log_prob : std::max(ret, log_prob);
     }
-    ret = phred(1.0f - std::exp(ret), 70.0f);
+    ret = phred(1.0f - std::exp(ret), VCF_MAX_GQ_CAP);
 
     ret = std::max(0.0f, ret);
 
@@ -207,7 +207,7 @@ float compute_consensus_quality(
                                                        symbol_lookup, rstart, rend, hap_id, false);
         total += log_prob;
     }
-    total = phred(1.0f - std::exp(total), 70.0f);
+    total = phred(1.0f - std::exp(total), VCF_MAX_GQ_CAP);
 
     total = std::max(0.0f, total);
 

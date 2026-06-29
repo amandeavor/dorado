@@ -17,6 +17,8 @@
 
 namespace dorado::secondary {
 
+constexpr float VCF_MAX_GQ_CAP = 70.0f;
+
 /**
  * \brief Utility function to normalize the genotype information of a variant.
  *          For a given variant, it deduplicates and enumerates alt alleles, creates the
