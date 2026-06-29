@@ -1158,7 +1158,8 @@ void run_variant_calling(const Options& opt,
     // Initialize the header of the output VCF file.
     // These are the only available FILTER options.
     const std::vector<std::pair<std::string, std::string>> vcf_filters{
-            {"PASS", "All filters passed"},
+            // PASS is added automatically by bcf_hdr
+            // {"PASS", "All filters passed"},
             {"LowQual", "Variant quality is below threshold"},
             {".", "Non-variant position"},
     };

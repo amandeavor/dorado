@@ -93,7 +93,6 @@ CATCH_TEST_CASE("VCFWriter writes valid VCF output and rejects invalid inputs", 
             .vcf_path = temp_dir.m_path / "variants.vcf",
             .filters =
                     {
-                            {"PASS", "All filters passed"},
                             {"LowQual", "Low quality"},
                     },
             .contigs =

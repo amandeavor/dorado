@@ -44,15 +44,8 @@ VCFWriter::VCFWriter(const std::filesystem::path& in_fn,
         throw std::runtime_error("Failed to create VCF header.");
     }
 
-    // Add the VCF format version
-    bcf_hdr_append(m_header.get(), "##fileformat=VCFv4.1");
-
-    // Add contig information
-    for (const auto& [name, length] : contigs) {
-        const std::string contig_entry =
-                "##contig=<ID=" + name + ",length=" + std::to_string(length) + ">";
-        bcf_hdr_append(m_header.get(), contig_entry.c_str());
-    }
+    // Set the VCF format version
+    bcf_hdr_set_version(m_header.get(), "VCFv4.2");
 
     // Add FILTER entries.
     for (const auto& [id, description] : filters) {
@@ -62,6 +55,13 @@ VCFWriter::VCFWriter(const std::filesystem::path& in_fn,
                                           .append(description)
                                           .append("\">");
         bcf_hdr_append(m_header.get(), filter_entry.c_str());
+    }
+
+    // Add contig information
+    for (const auto& [name, length] : contigs) {
+        const std::string contig_entry =
+                "##contig=<ID=" + name + ",length=" + std::to_string(length) + ">";
+        bcf_hdr_append(m_header.get(), contig_entry.c_str());
     }
 
     // Add mandatory INFO and FORMAT fields
@@ -76,9 +76,6 @@ VCFWriter::VCFWriter(const std::filesystem::path& in_fn,
     if (bcf_hdr_add_sample(m_header.get(), "SAMPLE") != 0) {
         throw std::runtime_error("Failed to add sample: SAMPLE");
     }
-
-    // Add column headers
-    bcf_hdr_append(m_header.get(), "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tSAMPLE");
 
     // Write the header to the file
     if (bcf_hdr_write(m_vcf_fp.get(), m_header.get()) < 0) {
