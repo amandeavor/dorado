@@ -44,8 +44,8 @@ VCFWriter::VCFWriter(const std::filesystem::path& in_fn,
         throw std::runtime_error("Failed to create VCF header.");
     }
 
-    // Add the VCF format version
-    bcf_hdr_append(m_header.get(), "##fileformat=VCFv4.1");
+    // Set the VCF format version
+    bcf_hdr_set_version(m_header.get(), "VCFv4.2");
 
     // Add contig information
     for (const auto& [name, length] : contigs) {

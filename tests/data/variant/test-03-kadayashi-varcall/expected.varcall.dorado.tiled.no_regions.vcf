@@ -1,6 +1,5 @@
 ##fileformat=VCFv4.2
 ##FILTER=<ID=PASS,Description="All filters passed">
-##fileformat=VCFv4.1
 ##contig=<ID=chr20,length=10000>
 ##FILTER=<ID=LowQual,Description="Variant quality is below threshold">
 ##FILTER=<ID=.,Description="Non-variant position">
