@@ -72,3 +72,29 @@ CATCH_TEST_CASE("Check if a read can be loaded correctly from FASTQ input.", "Fa
     CATCH_CHECK(reader.fetch_seq(read_id) == seq);
     CATCH_CHECK(reader.fetch_qual(read_id) == qscore);
 }
+
+CATCH_TEST_CASE("Check a lower-case read can be loaded as upper-case from FASTQ input.",
+                "FastxRandomReader") {
+    auto temp_dir = tests::make_temp_dir("fastx_random_reader_test");
+    auto temp_input_file = temp_dir.m_path / "input.fq";
+
+    const std::string upper_seq = "ACTGATCG";
+    const std::string seq = "ACTgatCG";
+    const std::vector<uint8_t> qscore = {20, 20, 30, 30, 20, 20, 40, 40};
+    const std::string read_id = "read1";
+
+    // Write temporary file.
+    {
+        utils::HtsFile hts_file(temp_input_file.string(), utils::HtsFile::OutputMode::FASTQ, 2,
+                                false);
+        HtsWriterNode writer(hts_file, "");
+        auto rec = generate_bam_entry(read_id, seq, qscore);
+        writer.write(rec.get());
+        hts_file.finalise([](size_t) { /* noop */ });
+    }
+
+    hts_io::FastxRandomReader reader(temp_input_file.string(), true);
+    CATCH_CHECK(reader.num_entries() == 1);
+    CATCH_CHECK(reader.fetch_seq(read_id) == upper_seq);
+    CATCH_CHECK(reader.fetch_qual(read_id) == qscore);
+}

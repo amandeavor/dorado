@@ -945,7 +945,7 @@ std::vector<std::string> load_reference_sequences(
     }
 
     spdlog::debug("[run_variant_calling] Loading full draft sequences.");
-    hts_io::FastxRandomReader fastx_reader(in_ref_fastx_fn);
+    hts_io::FastxRandomReader fastx_reader(in_ref_fastx_fn, true);
 
     // Dense vector by seq_id. Unused sequence IDs stay as empty strings.
     std::vector<std::string> draft_seqs(std::size(draft_lens));
@@ -1125,7 +1125,7 @@ void run_variant_calling(const Options& opt,
     draft_readers.reserve(opt.threads);
     for (int32_t i = 0; i < opt.threads; ++i) {
         draft_readers.emplace_back(
-                std::make_unique<hts_io::FastxRandomReader>(opt.in_ref_fastx_fn));
+                std::make_unique<hts_io::FastxRandomReader>(opt.in_ref_fastx_fn, true));
     }
     if (std::empty(draft_readers)) {
         throw std::runtime_error("Could not create draft readers!");

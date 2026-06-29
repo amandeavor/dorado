@@ -94,3 +94,17 @@ Both --vcf and --gvcf are specified, this should fail.
   > grep "\[error\]" out/stderr | sed -E 's/.*\[error\] //g'
   Exit code: 1
   Both --vcf and --gvcf are specified. Only one of these options can be used.
+
+VCF output to stdout, lower-case reference.
+  $ rm -rf out; mkdir -p out
+  > in_dir=${TEST_DATA_DIR}/polish/test-01-supertiny
+  > in_bam=${in_dir}/calls_to_draft.bam
+  > in_draft=${in_dir}/draft.lowercase.fasta.gz
+  > expected=${in_dir}/medaka.variants.vcf
+  > model_var="--models-directory ${MODEL_ROOT_DIR}"
+  > ${DORADO_BIN} polish --vcf --device cpu ${in_bam} ${in_draft} -t 4 ${model_var} > out/variants.vcf 2> out/stderr
+  > echo "Exit code: $?"
+  > grep -v "#" ${expected} > out/expected.no_header.vcf
+  > grep -v "#" out/variants.vcf > out/result.no_header.vcf
+  > diff out/expected.no_header.vcf out/result.no_header.vcf
+  Exit code: 0
