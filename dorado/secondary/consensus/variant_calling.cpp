@@ -1177,9 +1177,7 @@ std::vector<Variant> general_decode_variants(
 #endif
 
     if (merge_overlapping || merge_adjacent) {
-        std::sort(std::begin(variants), std::end(variants), [](const Variant& a, const Variant& b) {
-            return std::tie(a.seq_id, a.pos) < std::tie(b.seq_id, b.pos);
-        });
+        std::sort(std::begin(variants), std::end(variants));
 
         variants = merge_sorted_variants(variants, merge_overlapping, merge_adjacent, draft,
                                          positions_major, positions_minor, ref_seq_with_gaps,
@@ -1196,9 +1194,7 @@ std::vector<Variant> general_decode_variants(
 #endif
 
     if (return_all) {
-        std::sort(std::begin(variants), std::end(variants), [](const Variant& a, const Variant& b) {
-            return std::tie(a.seq_id, a.pos) < std::tie(b.seq_id, b.pos);
-        });
+        std::sort(std::begin(variants), std::end(variants));
 
         const std::size_t num_existing_variants = std::size(variants);
         std::size_t variant_idx = 0;
@@ -1234,9 +1230,7 @@ std::vector<Variant> general_decode_variants(
         }
     }
 
-    std::sort(std::begin(variants), std::end(variants), [](const Variant& a, const Variant& b) {
-        return std::tie(a.seq_id, a.pos) < std::tie(b.seq_id, b.pos);
-    });
+    std::sort(std::begin(variants), std::end(variants));
 
     // Normalize variants.
     std::vector<Variant> normalized_variants;
