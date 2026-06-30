@@ -131,7 +131,7 @@ CATCH_TEST_CASE("VCFWriter writes valid VCF output and rejects invalid inputs", 
     CATCH_SECTION("round-trips header metadata and records through htslib") {
         // Write data to a file.
         {
-            VCFWriter writer(data.vcf_path, data.filters, data.contigs);
+            VCFWriter writer(data.vcf_path, data.filters, data.contigs, false);
             writer.write_variant(data.first_variant);
             writer.write_variant(data.second_variant);
         }
@@ -157,6 +157,9 @@ CATCH_TEST_CASE("VCFWriter writes valid VCF output and rejects invalid inputs", 
                     vcf_text,
                     Catch::Matchers::ContainsSubstring(
                             "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tSAMPLE"));
+            CATCH_CHECK(vcf_text.find("##INFO=<ID=END") == std::string::npos);
+            CATCH_CHECK(vcf_text.find("##ALT=<ID=*") == std::string::npos);
+            CATCH_CHECK(vcf_text.find("##FORMAT=<ID=LEN") == std::string::npos);
 
             CATCH_CHECK_THAT(vcf_text, Catch::Matchers::ContainsSubstring("chr1\t10\t."));
             CATCH_CHECK_THAT(vcf_text, Catch::Matchers::ContainsSubstring("chr2\t42\t."));
@@ -192,18 +195,39 @@ CATCH_TEST_CASE("VCFWriter writes valid VCF output and rejects invalid inputs", 
         }
     }
 
+    CATCH_SECTION("writes gVCF header metadata when requested") {
+        {
+            VCFWriter writer(data.vcf_path, data.filters, data.contigs, true);
+        }
+
+        const std::string vcf_text = ReadFileIntoString(data.vcf_path);
+
+        CATCH_CHECK_THAT(vcf_text, Catch::Matchers::ContainsSubstring(
+                                           "##INFO=<ID=END,Number=1,Type=Integer,Description=\"End "
+                                           "position of the reference block\">"));
+        CATCH_CHECK_THAT(
+                vcf_text,
+                Catch::Matchers::ContainsSubstring(
+                        "##ALT=<ID=*,Description=\"Represents allele(s) other than observed.\">"));
+        CATCH_CHECK_THAT(
+                vcf_text,
+                Catch::Matchers::ContainsSubstring(
+                        "##FORMAT=<ID=LEN,Number=1,Type=Integer,Description=\"Length of <*> "
+                        "reference block\">"));
+    }
+
     CATCH_SECTION("write_variant rejects filters missing from the header") {
         Variant variant = data.first_variant;
         variant.filter = "UnknownFilter";
 
-        VCFWriter writer(data.vcf_path, data.filters, data.contigs);
+        VCFWriter writer(data.vcf_path, data.filters, data.contigs, false);
 
         CATCH_CHECK_THROWS_WITH(writer.write_variant(variant),
                                 Catch::Matchers::ContainsSubstring("not found in header"));
     }
 
     CATCH_SECTION("write_variant requires GT genotype information") {
-        VCFWriter writer(data.vcf_path, data.filters, data.contigs);
+        VCFWriter writer(data.vcf_path, data.filters, data.contigs, false);
         Variant variant = data.first_variant;
         variant.genotype = {{"GQ", "45"}};
 

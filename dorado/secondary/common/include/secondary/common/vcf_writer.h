@@ -21,7 +21,8 @@ public:
      */
     VCFWriter(const std::filesystem::path& filename,
               const std::vector<std::pair<std::string, std::string>>& filters,
-              const std::vector<std::pair<std::string, int64_t>>& contigs);
+              const std::vector<std::pair<std::string, int64_t>>& contigs,
+              bool include_gvcf_headers);
 
     ~VCFWriter() = default;
 

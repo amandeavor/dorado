@@ -1315,24 +1315,80 @@ std::vector<secondary::Interval64> merge_intervals(
     return merged;
 }
 
+void set_gvcf_reference_block_end(secondary::Variant& var, const int64_t end) {
+    var.alts = {"<*>"};
+    var.rend = end;
+    var.info["END"] = std::to_string(end);
+
+    auto it_len = std::find_if(std::begin(var.genotype), std::end(var.genotype),
+                               [](const auto& val) { return val.first == "LEN"; });
+    if (it_len == std::end(var.genotype)) {
+        var.genotype.emplace_back("LEN", std::to_string(end - var.pos));
+    } else {
+        it_len->second = std::to_string(end - var.pos);
+    }
+}
+
 secondary::Variant make_gvcf_reference_record(const int32_t seq_id,
                                               const int64_t pos,
                                               const char ref_base,
+                                              const int64_t end,
                                               const int32_t ploidy) {
-    return secondary::normalize_genotype(
-            secondary::Variant{
-                    .seq_id = seq_id,
-                    .pos = pos,
-                    .ref = std::string(1, ref_base),
-                    .alts = {"."},
-                    .filter = ".",
-                    .info = {},
-                    .qual = secondary::VCF_MAX_GQ_CAP,
-                    .genotype = {},
-                    .rstart = pos,
-                    .rend = pos + 1,
-            },
-            ploidy, secondary::VCF_MAX_GQ_CAP);
+    const secondary::Variant ref_var{
+            .seq_id = seq_id,
+            .pos = pos,
+            .ref = std::string(1, ref_base),
+            .alts = {"."},
+            .filter = ".",
+            .info = {},
+            .qual = secondary::VCF_MAX_GQ_CAP,
+            .genotype = {},
+            .rstart = pos,
+            .rend = end,
+    };
+
+    secondary::Variant ret =
+            secondary::normalize_genotype(ref_var, ploidy, secondary::VCF_MAX_GQ_CAP);
+
+    set_gvcf_reference_block_end(ret, end);
+
+    return ret;
+}
+
+bool is_single_base_gvcf_reference_record(const secondary::Variant& var) {
+    return (var.filter == ".") && (std::size(var.alts) == 1) && (var.alts.front() == ".") &&
+           std::empty(var.info) && (std::size(var.ref) == 1);
+}
+
+void compact_gvcf_reference_records(std::vector<secondary::Variant>& variants) {
+    std::vector<secondary::Variant> compacted;
+    compacted.reserve(std::size(variants));
+
+    for (std::size_t i = 0; i < std::size(variants);) {
+        if (!is_single_base_gvcf_reference_record(variants[i])) {
+            compacted.emplace_back(std::move(variants[i]));
+            ++i;
+            continue;
+        }
+
+        std::size_t j = i + 1;
+        while ((j < std::size(variants)) && is_single_base_gvcf_reference_record(variants[j]) &&
+               (variants[j].seq_id == variants[i].seq_id) &&
+               (variants[j].pos == (variants[j - 1].pos + 1)) &&
+               (variants[j].qual == variants[i].qual) &&
+               (variants[j].genotype == variants[i].genotype)) {
+            ++j;
+        }
+
+        secondary::Variant block = std::move(variants[i]);
+        if (j > (i + 1)) {
+            set_gvcf_reference_block_end(block, variants[j - 1].pos + 1);
+        }
+        compacted.emplace_back(std::move(block));
+        i = j;
+    }
+
+    variants = std::move(compacted);
 }
 
 void add_gvcf_reference_records_for_unprocessed_regions(
@@ -1347,15 +1403,8 @@ void add_gvcf_reference_records_for_unprocessed_regions(
     std::size_t variant_idx = 0;
 
     for (const secondary::Interval64& selected_interval : selected) {
-        const secondary::RegionInt region{seq_id, selected_interval.start, selected_interval.end};
-        if (!secondary::is_valid(region)) {
-            continue;
-        }
-        const int64_t selected_start = std::max<int64_t>(0, selected_interval.start);
-        const int64_t selected_end = (selected_interval.end < 0)
-                                             ? seq_len
-                                             : std::min<int64_t>(seq_len, selected_interval.end);
-        for (int64_t pos = selected_start; pos < selected_end; ++pos) {
+        int64_t pos = selected_interval.start;
+        while (pos < selected_interval.end) {
             while ((variant_idx < num_existing_variants) &&
                    (!secondary::is_valid(variants[variant_idx]) ||
                     (variants[variant_idx].seq_id < seq_id) ||
@@ -1367,11 +1416,21 @@ void add_gvcf_reference_records_for_unprocessed_regions(
 
             if ((variant_idx < num_existing_variants) &&
                 secondary::variant_covers_position(variants[variant_idx], seq_id, pos)) {
+                const int64_t var_end = variants[variant_idx].pos +
+                                        std::max<int64_t>(1, std::ssize(variants[variant_idx].ref));
+                pos = std::min<int64_t>(selected_interval.end, var_end);
                 continue;
             }
 
+            const int64_t block_start = pos;
+            pos = selected_interval.end;
+            if ((variant_idx < num_existing_variants) && (variants[variant_idx].seq_id == seq_id)) {
+                pos = std::min(pos, variants[variant_idx].pos);
+            }
+
             variants.emplace_back(make_gvcf_reference_record(
-                    seq_id, pos, draft[static_cast<std::size_t>(pos)], ploidy));
+                    seq_id, block_start, draft[static_cast<std::size_t>(block_start)], pos,
+                    ploidy));
         }
     }
 }
@@ -1586,6 +1645,7 @@ void worker_variant_calling_reduce(
                                                                ploidy);
             std::stable_sort(std::begin(reduce_data.variants_merged),
                              std::end(reduce_data.variants_merged));
+            compact_gvcf_reference_records(reduce_data.variants_merged);
         }
 
         if (!std::empty(hemizygous_regions)) {

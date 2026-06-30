@@ -34,7 +34,8 @@ void ensure_shared_buffer_initialized(bcf1_t& record) {
 
 VCFWriter::VCFWriter(const std::filesystem::path& in_fn,
                      const std::vector<std::pair<std::string, std::string>>& filters,
-                     const std::vector<std::pair<std::string, int64_t>>& contigs)
+                     const std::vector<std::pair<std::string, int64_t>>& contigs,
+                     const bool include_gvcf_headers)
         : m_vcf_fp{hts_open(in_fn.string().c_str(), "w"), HtsFileDestructor()},
           m_header{bcf_hdr_init("w"), BcfHdrDestructor()} {
     if (!m_vcf_fp) {
@@ -68,6 +69,16 @@ VCFWriter::VCFWriter(const std::filesystem::path& in_fn,
     bcf_hdr_append(m_header.get(), ("##dorado_version=" + std::string(DORADO_VERSION)).c_str());
     bcf_hdr_append(m_header.get(),
                    "##INFO=<ID=DP,Number=1,Type=Integer,Description=\"Total Depth\">");
+    if (include_gvcf_headers) {
+        bcf_hdr_append(m_header.get(),
+                       "##INFO=<ID=END,Number=1,Type=Integer,Description=\"End position of the "
+                       "reference block\">");
+        bcf_hdr_append(m_header.get(),
+                       "##ALT=<ID=*,Description=\"Represents allele(s) other than observed.\">");
+        bcf_hdr_append(m_header.get(),
+                       "##FORMAT=<ID=LEN,Number=1,Type=Integer,Description=\"Length of <*> "
+                       "reference block\">");
+    }
     bcf_hdr_append(m_header.get(),
                    "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">");
     bcf_hdr_append(m_header.get(),
@@ -117,7 +128,12 @@ void VCFWriter::write_variant(const Variant& variant) {
 
     // Add INFO fields.
     for (const auto& [key, value] : variant.info) {
-        bcf_update_info_string(m_header.get(), record.get(), key.c_str(), value.c_str());
+        if (key == "END") {
+            const int32_t end = std::stoi(value);
+            bcf_update_info_int32(m_header.get(), record.get(), key.c_str(), &end, 1);
+        } else {
+            bcf_update_info_string(m_header.get(), record.get(), key.c_str(), value.c_str());
+        }
     }
 
     // Genotype.

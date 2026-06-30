@@ -930,7 +930,7 @@ void run_polishing(const Options& opt,
                 {".", "Non-variant position"},
         };
 
-        vcf_writer = std::make_unique<secondary::VCFWriter>(out_vcf_fn, filters, draft_lens);
+        vcf_writer = std::make_unique<secondary::VCFWriter>(out_vcf_fn, filters, draft_lens, false);
     }
 
     // Prepare regions for processing.
