@@ -27,7 +27,10 @@ std::string fetch_seq(const faidx_t* fai, const std::string& region) {
     } else if (len == -1) {
         throw std::runtime_error{"Could not fetch sequence for region " + region};
     } else {
-        return std::string(seq.get(), seq.get() + len);
+        std::string seq_str(seq.get(), seq.get() + len);
+        std::transform(seq_str.begin(), seq_str.end(), seq_str.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+        return seq_str;
     }
 }
 

@@ -887,7 +887,7 @@ void run_polishing(const Options& opt,
     draft_readers.reserve(opt.threads);
     for (int32_t i = 0; i < opt.threads; ++i) {
         draft_readers.emplace_back(
-                std::make_unique<hts_io::FastxRandomReader>(opt.in_draft_fastx_fn));
+                std::make_unique<hts_io::FastxRandomReader>(opt.in_draft_fastx_fn, true));
     }
     if (std::empty(draft_readers)) {
         throw std::runtime_error("Could not create draft readers!");

@@ -53,6 +53,12 @@ FastxRandomReader::FastxRandomReader(const std::filesystem::path& fastx_path) {
     }
 }
 
+FastxRandomReader::FastxRandomReader(const std::filesystem::path& fastx_path,
+                                     const bool force_upper)
+        : FastxRandomReader::FastxRandomReader(fastx_path) {
+    m_force_upper = force_upper;
+};
+
 std::string FastxRandomReader::fetch_seq(const std::string& read_id) const {
     int len = 0;
     CharPtr seq(fai_fetch(m_faidx.get(), read_id.c_str(), &len));
@@ -63,7 +69,11 @@ std::string FastxRandomReader::fetch_seq(const std::string& read_id) const {
         spdlog::error("Could not fetch sequence for {}", read_id);
         throw std::runtime_error("");
     } else {
-        return std::string(seq.get(), seq.get() + len);
+        std::string seq_str(seq.get(), seq.get() + len);
+        if (m_force_upper) {
+            seq_str = utils::to_uppercase(std::move(seq_str));
+        }
+        return seq_str;
     }
 }
 

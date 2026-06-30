@@ -20,8 +20,12 @@ using FaidxPtr = std::unique_ptr<faidx_t, FaidxDestructor>;
 class FastxRandomReader {
     FaidxPtr m_faidx{nullptr};
 
+private:
+    bool m_force_upper{false};
+
 public:
     FastxRandomReader(const std::filesystem::path& fastx_path);
+    FastxRandomReader(const std::filesystem::path& fastx_path, bool force_upper);
     ~FastxRandomReader() = default;
 
     std::string fetch_seq(const std::string& read_id) const;
