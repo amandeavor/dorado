@@ -205,13 +205,12 @@ CATCH_TEST_CASE("decode_variants", TEST_GROUP) {
         },
 
         TestCase{
-            "Return all reference positions (gVCF). This includes reference positions on variant sites as well.",
+            "Return all reference positions (gVCF), skipping positions covered by variants.",
             "ACTGA", {"ACAGA"}, {0, 1, 2, 3, 4}, {0, 0, 0, 0, 0}, 3.0f, false, true, true, false, false,
             {
                 Variant{0, 0, "A", {"."}, ".", {}, 70.0f, {{"GT", "0"}, {"GQ", "70"}}, 0, 1},
                 Variant{0, 1, "C", {"."}, ".", {}, 70.0f, {{"GT", "0"}, {"GQ", "70"}}, 1, 2},
                 Variant{0, 2, "T", {"A"}, "PASS", {}, 70.0f, {{"GT", "1"}, {"GQ", "70"}}, 2, 3},
-                Variant{0, 2, "T", {"."}, ".", {}, 0.0f, {{"GT", "0"}, {"GQ", "0"}}, 2, 3},
                 Variant{0, 3, "G", {"."}, ".", {}, 70.0f, {{"GT", "0"}, {"GQ", "70"}}, 3, 4},
                 Variant{0, 4, "A", {"."}, ".", {}, 70.0f, {{"GT", "0"}, {"GQ", "70"}}, 4, 5},
             },

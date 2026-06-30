@@ -41,6 +41,14 @@ float round_float(float val, const int32_t decimal_places) {
     return val;
 }
 
+bool variant_ends_before_position(const Variant& var, const int64_t pos) {
+    return (var.pos + std::max<int64_t>(1, std::ssize(var.ref))) <= pos;
+}
+
+bool variant_covers_position(const Variant& var, const int32_t seq_id, const int64_t pos) {
+    return (var.seq_id == seq_id) && (var.pos <= pos) && !variant_ends_before_position(var, pos);
+}
+
 bool is_subset_of_symbols(const std::unordered_set<char>& symbol_map,
                           const std::string_view query) {
     for (const char c : query) {
@@ -1187,6 +1195,13 @@ std::vector<Variant> general_decode_variants(
 #endif
 
     if (return_all) {
+        std::sort(std::begin(variants), std::end(variants), [](const Variant& a, const Variant& b) {
+            return std::tie(a.seq_id, a.pos) < std::tie(b.seq_id, b.pos);
+        });
+
+        const std::size_t num_existing_variants = std::size(variants);
+        std::size_t variant_idx = 0;
+
         for (int64_t i = 0; i < std::ssize(positions_major); ++i) {
             // Skip non-reference positions.
             if (positions_minor[i] != 0) {
@@ -1195,6 +1210,16 @@ std::vector<Variant> general_decode_variants(
 
             const int64_t pos = positions_major[i];
             const std::string ref(1, draft[pos]);
+
+            while ((variant_idx < num_existing_variants) &&
+                   variant_ends_before_position(variants[variant_idx], pos)) {
+                ++variant_idx;
+            }
+
+            if ((variant_idx < num_existing_variants) &&
+                variant_covers_position(variants[variant_idx], seq_id, pos)) {
+                continue;
+            }
 
             Variant var{
                     seq_id, pos, ref, {"."}, ".", {}, 0.0f, {{"GT", "0"}, {"GQ", "0"}}, i, (i + 1),
