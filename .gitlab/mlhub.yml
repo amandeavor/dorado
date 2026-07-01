@@ -1,18 +1,14 @@
 # MLHub - Single read eval
 
-.mlhub_setup:
+.mlhub_job:
   stage: test
-  when: manual
   image: ${TRIGGER_IMAGE}
-  needs:
-  - job: build:linux:x86:noble
-    artifacts: false
+  variables:
+    EKS_SIZE: small
+  extends: 
+    - .linux_runner    
   before_script:
     - pip install mlhub-api
-
-
-.mlhub_job:
-  extends: .mlhub_setup
   script:
     - sed -i "s#COMMIT_SHA_PLACEHOLDER#${CI_COMMIT_SHA}#g" ${SAMPLE_SHEET}
     - sed -i "s#COMMIT_SHORT_PLACEHOLDER#${CI_COMMIT_SHORT_SHA}#g" ${SAMPLE_SHEET}
@@ -23,6 +19,10 @@
         --script_id ${SCRIPT_ID} \
         --csrf_token ${MLH_CRSF_TOKEN} \
         --session_id ${MLH_SESSION_ID}
+  needs:
+  - job: build:linux:x86:noble
+    artifacts: false
+  when: manual
 
 
 mlhub:sre_dna_r1041_e82:
