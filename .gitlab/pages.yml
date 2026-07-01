@@ -10,6 +10,10 @@ pages:
   image: ${DORADO_PRECOMMIT}
   # We place this in pre_build_check so that it appears on the left in the UI
   stage: pre-flight
+  extends:
+    - .linux_runner
+  variables:
+    EKS_SIZE: small
   script:
     - mkdir public
     - cp tetra/visualiser.html public/index.html
