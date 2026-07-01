@@ -1969,14 +1969,14 @@ CATCH_TEST_CASE("worker_variant_calling_reduce emits diploid gVCF records around
     CATCH_REQUIRE(!ret_status.exception_thrown);
     CATCH_REQUIRE(!worker_terminate.load());
     CATCH_REQUIRE(chrom_reduce_data[0].variants_merged ==
-                  std::vector{secondary::Variant{0, 1, "C", {"."}, ".", {}, 70.0f,
-                                                 {{"GT", "0/0"}, {"GQ", "70"}}, 1, 2},
+                  std::vector{secondary::Variant{0, 1, "C", {"."}, ".", {}, 60.0f,
+                                                 {{"GT", "0/0"}, {"GQ", "60"}}, 1, 2},
                               secondary::Variant{0, 1, "C", {"C"}, "PASS", {}, 41.0f,
                                                  {{"GT", "1/1"}, {"GQ", "41"}}, 0, 0},
                               secondary::Variant{0, 2, "G", {"T"}, "PASS", {}, 42.0f,
                                                  {{"GT", "1/1"}, {"GQ", "42"}}, 0, 0},
-                              secondary::Variant{0, 3, "T", {"."}, ".", {}, 70.0f,
-                                                 {{"GT", "0/0"}, {"GQ", "70"}}, 3, 4}});
+                              secondary::Variant{0, 3, "T", {"."}, ".", {}, 60.0f,
+                                                 {{"GT", "0/0"}, {"GQ", "60"}}, 3, 4}});
     CATCH_CHECK(stats.get_stats().at("processed") == 3.0);
     CATCH_CHECK(std::size(output_queue) == 1);
     // clang-format on

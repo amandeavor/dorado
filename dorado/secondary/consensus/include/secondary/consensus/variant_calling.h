@@ -17,7 +17,7 @@
 
 namespace dorado::secondary {
 
-constexpr float VCF_MAX_GQ_CAP = 70.0f;
+constexpr float VCF_MAX_GQ_CAP = 60.0f;
 
 /**
  * \brief Utility function to check if a variant ends before a given position on a reference.

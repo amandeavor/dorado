@@ -16,8 +16,8 @@ Candidate-filtered gVCF emits non-variant records for regions with no candidates
   [warning] Skipping basecaller compatibility checks for user-specified model override. The accuracy of the results is not guaranteed.
   [warning] Variant calling model is not compatible with the input BAM. This may produce inferior results.
   100
-  chr20 1 T . . GT:GQ 0/0:70
-  chr20 100 T . . GT:GQ 0/0:70
+  chr20 1 T . . GT:GQ 0/0:60
+  chr20 100 T . . GT:GQ 0/0:60
 
 Candidate-filtered gVCF emits inferred variants and reference records for a targeted region.
 The `in.varcall.unsr.list` has the first candidate on position 1614. The variant calling is started at position 1000 to encompass non-inferred regions too.
@@ -42,7 +42,7 @@ chr20	1959	1
   > grep -v "^#" out/variants.vcf | cut -f 1-5,7-10 > out/gvcf.body.no_qual.vcf
   > awk '{ print $1, $2, $3 }' out/processed_regions.bed
   > wc -l out/gvcf.body.no_qual.vcf | awk '{ print $1 }'
-  > ### Check the non-variant non-inferred gVCF reference region (GQ is 70)
+  > ### Check the non-variant non-inferred gVCF reference region (GQ is 60)
   > head -n 5 out/gvcf.body.no_qual.vcf | sed -E 's/\t/ /g'
   > ### Check the non-variant reference call from an inferred window (GQ is computed)
   > grep "1615" out/gvcf.body.no_qual.vcf | sed -E 's/\t/ /g'
@@ -58,13 +58,13 @@ chr20	1959	1
   chr20 1714 2001
   chr20 1860 2145
   1146
-  chr20 1000 . G . . . GT:GQ 0/0:70
-  chr20 1001 . C . . . GT:GQ 0/0:70
-  chr20 1002 . G . . . GT:GQ 0/0:70
-  chr20 1003 . A . . . GT:GQ 0/0:70
-  chr20 1004 . C . . . GT:GQ 0/0:70
+  chr20 1000 . G . . . GT:GQ 0/0:60
+  chr20 1001 . C . . . GT:GQ 0/0:60
+  chr20 1002 . G . . . GT:GQ 0/0:60
+  chr20 1003 . A . . . GT:GQ 0/0:60
+  chr20 1004 . C . . . GT:GQ 0/0:60
   chr20 1615 . C . . . GT:GQ 0/0:54
-  chr20 1614 . T . . . GT:GQ 0/0:63
+  chr20 1614 . T . . . GT:GQ 0/0:60
   chr20 1959 . T G PASS . GT:GQ 0/1:44
 
 Candidate-filtered gVCF handles a whole-contig region with omitted bounds.
@@ -85,8 +85,8 @@ Candidate-filtered gVCF handles a whole-contig region with omitted bounds.
   [warning] Skipping basecaller compatibility checks for user-specified model override. The accuracy of the results is not guaranteed.
   [warning] Variant calling model is not compatible with the input BAM. This may produce inferior results.
   10000
-  chr20 1 T . . GT:GQ 0/0:70
-  chr20 10000 C . . GT:GQ 0/0:70
+  chr20 1 T . . GT:GQ 0/0:60
+  chr20 10000 C . . GT:GQ 0/0:60
 
 Candidate-filtered gVCF handles a region with an omitted end.
   $ rm -rf out; mkdir -p out
@@ -106,5 +106,5 @@ Candidate-filtered gVCF handles a region with an omitted end.
   [warning] Skipping basecaller compatibility checks for user-specified model override. The accuracy of the results is not guaranteed.
   [warning] Variant calling model is not compatible with the input BAM. This may produce inferior results.
   10
-  chr20 9991 A . . GT:GQ 0/0:70
-  chr20 10000 C . . GT:GQ 0/0:70
+  chr20 9991 A . . GT:GQ 0/0:60
+  chr20 10000 C . . GT:GQ 0/0:60
