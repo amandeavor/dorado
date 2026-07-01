@@ -48,6 +48,7 @@ MODEL_DIR=${output_dir}/${MODEL_NAME}
 if [[ ! -d "${MODEL_DIR}" ]]; then
     ${DORADO_BIN} download --model "${MODEL_NAME}" --models-directory ${output_dir}
 fi
+MODEL_v600=${MODEL_NAME}
 
 # Download the model once.
 MODEL_NAME="dna_r10.4.1_e8.2_400bps_hac@v5.2.0_smallvar@v1.0"
@@ -68,6 +69,7 @@ export TEST_DIR
 export MODEL_DIR
 export MODEL_NAME
 export MODEL_ROOT_DIR
+export MODEL_v600
 export POLISH_MODEL_DIR
 export POLISH_MODEL_NAME
 export OUTPUT_DIR=${output_dir}

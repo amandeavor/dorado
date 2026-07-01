@@ -96,7 +96,7 @@ std::vector<Window> create_windows_from_regions(
     for (int64_t i = 0; i < std::ssize(regions); ++i) {
         Region region = regions[i];
 
-        spdlog::debug("Creating windows for region: '{}'.", region_to_string(region));
+        spdlog::debug("Creating windows for region: '{}'.", to_string(region));
 
         const auto it = draft_lookup.find(region.name);
         if (it == std::end(draft_lookup)) {
@@ -121,7 +121,7 @@ std::vector<Window> create_windows_from_regions(
                                bam_chunk_len, window_overlap, static_cast<int32_t>(i));
 
         spdlog::debug("Generated {} windows for region: '{}'.", std::size(new_windows),
-                      region_to_string(region));
+                      to_string(region));
         windows.reserve(std::size(windows) + std::size(new_windows));
         windows.insert(std::end(windows), std::begin(new_windows), std::end(new_windows));
     }

@@ -25,7 +25,10 @@
 #include <fstream>
 #include <memory>
 #include <span>
+#include <sstream>
 #include <stdexcept>
+#include <string_view>
+#include <tuple>
 
 #if DORADO_CUDA_BUILD
 #include "torch_utils/cuda_utils.h"
@@ -1227,9 +1230,9 @@ void worker_separate_decode_data(utils::AsyncQueue<DecodeData>& input_queue,
 }
 
 namespace {
+
 std::vector<secondary::Variant> call_variants_single_chrom(
-        const hts_io::FastxRandomReader& fastx_reader,
-        const std::string& seq_name,
+        const std::string& draft,
         const std::vector<secondary::VariantCallingSample>& vc_input_data,
         const secondary::DecoderBase& decoder,
         const float pass_min_qual,
@@ -1257,9 +1260,6 @@ std::vector<secondary::Variant> call_variants_single_chrom(
         return {};
     }
 
-    // Get the draft sequence.
-    const std::string draft = fastx_reader.fetch_seq(seq_name);
-
     // Trim the overlapping portions between samples.
     const auto trimmed_vc_samples = secondary::trim_vc_samples(vc_input_data, ordered_ids);
 
@@ -1281,6 +1281,99 @@ std::vector<secondary::Variant> call_variants_single_chrom(
     std::stable_sort(std::begin(results), std::end(results));
 
     return results;
+}
+
+std::vector<secondary::Interval64> merge_intervals(
+        const std::vector<secondary::RegionInt>& intervals,
+        const int64_t seq_len) {
+    std::vector<secondary::Interval64> valid_intervals;
+    valid_intervals.reserve(std::size(intervals));
+
+    for (const auto& interval : intervals) {
+        if (!secondary::is_valid(interval)) {
+            continue;
+        }
+        const secondary::RegionInt region = secondary::normalize_region(interval, seq_len);
+        if (!secondary::is_valid(region)) {
+            continue;
+        }
+        valid_intervals.emplace_back(secondary::Interval64{region.start, region.end});
+    }
+
+    std::sort(std::begin(valid_intervals), std::end(valid_intervals));
+
+    std::vector<secondary::Interval64> merged;
+    merged.reserve(std::size(valid_intervals));
+    for (auto&& interval : valid_intervals) {
+        if (std::empty(merged) || (interval.start > merged.back().end)) {
+            merged.emplace_back(std::move(interval));
+            continue;
+        }
+        merged.back().end = std::max(merged.back().end, interval.end);
+    }
+
+    return merged;
+}
+
+secondary::Variant make_gvcf_reference_record(const int32_t seq_id,
+                                              const int64_t pos,
+                                              const char ref_base,
+                                              const int32_t ploidy) {
+    return secondary::normalize_genotype(
+            secondary::Variant{
+                    .seq_id = seq_id,
+                    .pos = pos,
+                    .ref = std::string(1, ref_base),
+                    .alts = {"."},
+                    .filter = ".",
+                    .info = {},
+                    .qual = secondary::VCF_MAX_GQ_CAP,
+                    .genotype = {},
+                    .rstart = pos,
+                    .rend = pos + 1,
+            },
+            ploidy, secondary::VCF_MAX_GQ_CAP);
+}
+
+void add_gvcf_reference_records_for_unprocessed_regions(
+        std::vector<secondary::Variant>& variants,
+        const int32_t seq_id,
+        const std::string& draft,
+        const std::vector<secondary::RegionInt>& selected_regions,
+        const int32_t ploidy) {
+    const int64_t seq_len = std::ssize(draft);
+    const std::vector<secondary::Interval64> selected = merge_intervals(selected_regions, seq_len);
+    const std::size_t num_existing_variants = std::size(variants);
+    std::size_t variant_idx = 0;
+
+    for (const secondary::Interval64& selected_interval : selected) {
+        const secondary::RegionInt region{seq_id, selected_interval.start, selected_interval.end};
+        if (!secondary::is_valid(region)) {
+            continue;
+        }
+        const int64_t selected_start = std::max<int64_t>(0, selected_interval.start);
+        const int64_t selected_end = (selected_interval.end < 0)
+                                             ? seq_len
+                                             : std::min<int64_t>(seq_len, selected_interval.end);
+        for (int64_t pos = selected_start; pos < selected_end; ++pos) {
+            while ((variant_idx < num_existing_variants) &&
+                   (!secondary::is_valid(variants[variant_idx]) ||
+                    (variants[variant_idx].seq_id < seq_id) ||
+                    ((variants[variant_idx].seq_id == seq_id) &&
+                     secondary::variant_ends_before_position(variants[variant_idx], seq_id,
+                                                             pos)))) {
+                ++variant_idx;
+            }
+
+            if ((variant_idx < num_existing_variants) &&
+                secondary::variant_covers_position(variants[variant_idx], seq_id, pos)) {
+                continue;
+            }
+
+            variants.emplace_back(make_gvcf_reference_record(
+                    seq_id, pos, draft[static_cast<std::size_t>(pos)], ploidy));
+        }
+    }
 }
 
 std::vector<secondary::Variant> merge_variants(
@@ -1387,6 +1480,7 @@ void worker_variant_calling_reduce(
         const float pass_min_qual,
         const bool ambig_ref,
         const bool gvcf,
+        const int32_t ploidy,
         const int32_t flank_trim,
         const secondary::VariantCandidateSource variant_candidate_source) {
     utils::ScopedProfileRange spr1("variant_calling_reduce", 2);
@@ -1428,10 +1522,16 @@ void worker_variant_calling_reduce(
                 chrom_vc_samples[seq_id];
 
         const std::string& seq_name = draft_lens[seq_id].first;
+        std::optional<std::string> draft;
+        if (!std::empty(vc_decode_data) || gvcf) {
+            draft.emplace(fastx_readers[tid]->fetch_seq(seq_name));
+        }
 
-        std::vector<secondary::Variant> variants =
-                call_variants_single_chrom(*fastx_readers[tid], seq_name, vc_decode_data, decoder,
-                                           pass_min_qual, ambig_ref, gvcf);
+        std::vector<secondary::Variant> variants;
+        if (!std::empty(vc_decode_data)) {
+            variants = call_variants_single_chrom(*draft, vc_decode_data, decoder, pass_min_qual,
+                                                  ambig_ref, gvcf);
+        }
 
         spdlog::debug(
                 "[variant_calling_reduce tid = {}] Finished calling variants "
@@ -1477,6 +1577,15 @@ void worker_variant_calling_reduce(
                                    reduce_data.processed_regions, flank_trim);
         } else {
             reduce_data.variants_merged = reduce_data.variants_inference;
+        }
+        if (gvcf) {
+            std::stable_sort(std::begin(reduce_data.variants_merged),
+                             std::end(reduce_data.variants_merged));
+            add_gvcf_reference_records_for_unprocessed_regions(reduce_data.variants_merged, seq_id,
+                                                               *draft, reduce_data.selected_regions,
+                                                               ploidy);
+            std::stable_sort(std::begin(reduce_data.variants_merged),
+                             std::end(reduce_data.variants_merged));
         }
 
         if (!std::empty(hemizygous_regions)) {
@@ -1718,6 +1827,7 @@ void worker_variant_writer(
                     std::vector<secondary::Variant>{}.swap(results.variants_merged);
                     std::vector<secondary::Variant>{}.swap(results.variants_simple);
                     std::vector<secondary::Variant>{}.swap(results.variants_inference);
+                    std::vector<secondary::RegionInt>{}.swap(results.selected_regions);
                     std::vector<secondary::IntervalInt64>{}.swap(results.processed_regions);
                 }
 

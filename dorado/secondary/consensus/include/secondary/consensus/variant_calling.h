@@ -17,6 +17,18 @@
 
 namespace dorado::secondary {
 
+constexpr float VCF_MAX_GQ_CAP = 60.0f;
+
+/**
+ * \brief Utility function to check if a variant ends before a given position on a reference.
+ */
+bool variant_ends_before_position(const Variant& var, int32_t seq_id, int64_t pos);
+
+/**
+ * \brief Utility function to check if a variant overlaps a given position on a reference.
+ */
+bool variant_covers_position(const Variant& var, int32_t seq_id, int64_t pos);
+
 /**
  * \brief Utility function to normalize the genotype information of a variant.
  *          For a given variant, it deduplicates and enumerates alt alleles, creates the

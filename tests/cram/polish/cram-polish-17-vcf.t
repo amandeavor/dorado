@@ -18,7 +18,7 @@ IMPORTANT: not comparing the variant/genotype qualities because they may vary wi
   > in_dir=${TEST_DATA_DIR}/polish/test-01-supertiny
   > in_bam=${in_dir}/calls_to_draft.bam
   > in_draft=${in_dir}/draft.fasta.gz
-  > expected=${in_dir}/medaka.variants.gvcf.gz
+  > expected=${in_dir}/medaka.variants.no_dups.gvcf
   > model_var="--models-directory ${MODEL_ROOT_DIR}"
   > ${DORADO_BIN} polish --gvcf --device cpu ${in_bam} ${in_draft} -t 4 ${model_var} > out/variants.vcf 2> out/stderr
   > echo "Exit code: $?"
@@ -67,7 +67,7 @@ IMPORTANT: not comparing the variant/genotype qualities because they may vary wi
   > in_dir=${TEST_DATA_DIR}/polish/test-01-supertiny
   > in_bam=${in_dir}/calls_to_draft.bam
   > in_draft=${in_dir}/draft.fasta.gz
-  > expected=${in_dir}/medaka.variants.gvcf.gz
+  > expected=${in_dir}/medaka.variants.no_dups.gvcf
   > model_var="--models-directory ${MODEL_ROOT_DIR}"
   > ${DORADO_BIN} polish --gvcf --device cpu ${in_bam} ${in_draft} -t 4 ${model_var} -o out 2> out/stderr
   > echo "Exit code: $?"

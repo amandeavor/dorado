@@ -65,7 +65,7 @@ std::pair<std::vector<std::vector<Region>>, std::vector<Interval>> prepare_regio
                 throw std::runtime_error(
                         "Sequence name from a custom specified region not found in the input "
                         "sequence file! region: " +
-                        region_to_string(region));
+                        to_string(region));
             }
             const auto [ref_id, ref_len] = it->second;
             ret[ref_id].emplace_back(Region{region.name, region.start, region.end});

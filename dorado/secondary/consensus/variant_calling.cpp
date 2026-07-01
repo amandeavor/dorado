@@ -128,17 +128,63 @@ float compute_subseq_log_prob(
 }
 
 /**
- * \brief Utility function to compute the maximum log probability of a reference sequence
+ * \brief Utility function to compute the phred-scaled log-likelihood of a given set of sequences
  *          occurring for any input haplotype.
- *          If there is more than one haplotype, log prob is computed for every haplotype
- *          and only the maximum value is returned.
+ * \param probs_3D A 3D tensor of probabilities (output of inference) for a single sample (not batch).
+ *                  Dimensions: [seq_len x num_haplotypes x num_classes].
+ * \param sequences Input sequences, used to access class probabilities.
+ * \param symbol_lookup Lookup table of symbol chars (bases) -> numeric ID of that symbol, to encode sequence bases into class IDs.
+ * \param rstart Region start (start of the subsequence in seq). Zero-based.
+ * \param rend Region end (end of the subsequence in seq). Non-inclusive.
+ * \returns Phred-scaled quality for a given set of input sequences.
+ */
+float compute_quality_from_probs(
+        const at::Tensor& probs_3D,  // Probabilities for a single sample (not batch).
+        const std::span<std::string_view> sequences,
+        const std::array<int32_t, 256>& symbol_lookup,
+        const int64_t rstart,
+        const int64_t rend) {
+    if (std::size(probs_3D.sizes()) != 3) {
+        throw std::runtime_error(
+                "Tensor of probabilities given to compute_quality_from_probs is of wrong shape. "
+                "Input "
+                "shape: " +
+                utils::tensor_shape_as_string(probs_3D) + ", but expected 3 dimensions.");
+    }
+
+    const int64_t num_haplotypes = probs_3D.size(1);
+
+    if (std::ssize(sequences) != num_haplotypes) {
+        throw std::runtime_error(
+                "Number of haplotypes in the tensor differs from the number of "
+                "sequences provided to compute_quality_from_probs. Tensor shape: " +
+                utils::tensor_shape_as_string(probs_3D) +
+                ", number of sequences: " + std::to_string(std::size(sequences)));
+    }
+
+    float total = 0.0f;
+    for (int64_t hap_id = 0; hap_id < num_haplotypes; ++hap_id) {
+        const float log_prob = compute_subseq_log_prob(probs_3D, sequences[hap_id], symbol_lookup,
+                                                       rstart, rend, hap_id, false);
+        total += log_prob;
+    }
+    total = phred(1.0f - std::exp(total), VCF_MAX_GQ_CAP);
+
+    total = std::max(0.0f, total);
+
+    return total;
+}
+
+/**
+ * \brief Utility function to compute a quality score for the assertion that all haplotypes in a region are the reference sequence.
+ *        This is the phred-scaled log-likelihood over the predictions that any allele is not reference.
  * \param probs_3D A 3D tensor of probabilities (output of inference) for a single sample (not batch).
  *                  Dimensions: [seq_len x num_haplotypes x num_classes].
  * \param ref_seq_with_gaps Input sequence, used to access class probabilities.
  * \param symbol_lookup Lookup table of symbol chars (bases) -> numeric ID of that symbol, to encode sequence bases into class IDs.
  * \param rstart Region start (start of the subsequence in seq). Zero-based.
  * \param rend Region end (end of the subsequence in seq). Non-inclusive.
- * \returns Maximum log probability of the reference sequence occurring for any input haplotype predictions.
+ * \returns Phred-scaled quality for all haplotypes being reference given input haplotype predictions.
  */
 float compute_ref_quality(
         const at::Tensor& probs_3D,  // Probabilities for a single sample (not batch).
@@ -146,37 +192,27 @@ float compute_ref_quality(
         const std::array<int32_t, 256>& symbol_lookup,
         const int64_t rstart,
         const int64_t rend) {
-    if (std::size(probs_3D.sizes()) != 3) {
-        throw std::runtime_error(
-                "Tensor of probabilities given to compute_quality is of wrong shape. Input "
-                "shape: " +
-                utils::tensor_shape_as_string(probs_3D) + ", but expected 3 dimensions.");
-    }
-
     const int64_t num_haplotypes = probs_3D.size(1);
 
-    float ret = 0.0f;
+    std::vector<std::string_view> seqs;
+    seqs.reserve(num_haplotypes);
     for (int64_t hap_id = 0; hap_id < num_haplotypes; ++hap_id) {
-        const float log_prob = compute_subseq_log_prob(probs_3D, ref_seq_with_gaps, symbol_lookup,
-                                                       rstart, rend, hap_id, true);
-        ret = (hap_id == 0) ? log_prob : std::max(ret, log_prob);
+        seqs.emplace_back(ref_seq_with_gaps);
     }
-    ret = phred(1.0f - std::exp(ret), 70.0f);
 
-    ret = std::max(0.0f, ret);
-
-    return ret;
+    return compute_quality_from_probs(probs_3D, seqs, symbol_lookup, rstart, rend);
 }
 
 /**
- * \brief Utility function to compute the log probability of a predicted sequence across all haplotypes (accumulated).
+ * \brief Utility function to compute a quality score for the assertion that the haplotypes in a region are the consensus sequences.
+ *        This is the phred-scaled log-likelihood over the predictions that any predicted allele is wrong.
  * \param probs_3D A 3D tensor of probabilities (output of inference) for a single sample (not batch).
  *                  Dimensions: [seq_len x num_haplotypes x num_classes].
  * \param ref_seq_with_gaps Input sequence, used to access class probabilities.
  * \param symbol_lookup Lookup table of symbol chars (bases) -> numeric ID of that symbol, to encode sequence bases into class IDs.
  * \param rstart Region start (start of the subsequence in seq). Zero-based.
  * \param rend Region end (end of the subsequence in seq). Non-inclusive.
- * \returns Log probability of the predicted sequence occurring across all haplotypes in the input prob tensor.
+ * \returns Phred-scaled quality for the predicted haplotype sequences.
  */
 float compute_consensus_quality(
         const at::Tensor& probs_3D,  // Probabilities for a single sample (not batch).
@@ -184,34 +220,13 @@ float compute_consensus_quality(
         const std::array<int32_t, 256>& symbol_lookup,
         const int64_t rstart,
         const int64_t rend) {
-    if (std::size(probs_3D.sizes()) != 3) {
-        throw std::runtime_error(
-                "Tensor of probabilities given to compute_quality is of wrong shape. Input "
-                "shape: " +
-                utils::tensor_shape_as_string(probs_3D) + ", but expected 3 dimensions.");
+    std::vector<std::string_view> seqs;
+    seqs.reserve(std::size(cons_seqs_with_gaps));
+    for (const auto& val : cons_seqs_with_gaps) {
+        seqs.emplace_back(val.seq);
     }
 
-    const int64_t num_haplotypes = probs_3D.size(1);
-
-    if (std::ssize(cons_seqs_with_gaps) != num_haplotypes) {
-        throw std::runtime_error(
-                "Number of haplotypes in the tensor differs from the number of haplotype consensus "
-                "sequences provided to compute_consensus_quality. Tensor shape: " +
-                utils::tensor_shape_as_string(probs_3D) + ", number of consensus sequences: " +
-                std::to_string(std::size(cons_seqs_with_gaps)));
-    }
-
-    float total = 0.0f;
-    for (int64_t hap_id = 0; hap_id < num_haplotypes; ++hap_id) {
-        const float log_prob = compute_subseq_log_prob(probs_3D, cons_seqs_with_gaps[hap_id].seq,
-                                                       symbol_lookup, rstart, rend, hap_id, false);
-        total += log_prob;
-    }
-    total = phred(1.0f - std::exp(total), 70.0f);
-
-    total = std::max(0.0f, total);
-
-    return total;
+    return compute_quality_from_probs(probs_3D, seqs, symbol_lookup, rstart, rend);
 }
 
 Variant construct_variant(const std::string_view draft,
@@ -616,6 +631,15 @@ bool append_ref_base(Variant& var,
 
 }  // namespace
 
+bool variant_ends_before_position(const Variant& var, const int32_t seq_id, const int64_t pos) {
+    return (var.seq_id == seq_id) && ((var.pos + std::max<int64_t>(1, std::ssize(var.ref))) <= pos);
+}
+
+bool variant_covers_position(const Variant& var, const int32_t seq_id, const int64_t pos) {
+    return (var.seq_id == seq_id) && (var.pos <= pos) &&
+           !variant_ends_before_position(var, seq_id, pos);
+}
+
 Variant normalize_genotype(const Variant& var, const int32_t ploidy, const float min_qual) {
     Variant ret = var;
 
@@ -632,8 +656,16 @@ Variant normalize_genotype(const Variant& var, const int32_t ploidy, const float
     // This is a gVCF record.
     if (std::empty(var.alts) || (var.filter == ".") ||
         (var.alts == std::vector<std::string>{"."})) {
+        std::ostringstream oss_gt;
+        for (int32_t i = 0; i < ploidy; ++i) {
+            if (i > 0) {
+                oss_gt << '/';
+            }
+            oss_gt << '0';
+        }
+
         ret.alts = {"."};
-        ret.genotype = {{"GT", "0"}, {"GQ", std::to_string(gq)}};
+        ret.genotype = {{"GT", std::move(oss_gt).str()}, {"GQ", std::to_string(gq)}};
         ret.filter = ".";
         return ret;
     }
@@ -1145,9 +1177,7 @@ std::vector<Variant> general_decode_variants(
 #endif
 
     if (merge_overlapping || merge_adjacent) {
-        std::sort(std::begin(variants), std::end(variants), [](const Variant& a, const Variant& b) {
-            return std::tie(a.seq_id, a.pos) < std::tie(b.seq_id, b.pos);
-        });
+        std::sort(std::begin(variants), std::end(variants));
 
         variants = merge_sorted_variants(variants, merge_overlapping, merge_adjacent, draft,
                                          positions_major, positions_minor, ref_seq_with_gaps,
@@ -1164,6 +1194,11 @@ std::vector<Variant> general_decode_variants(
 #endif
 
     if (return_all) {
+        std::sort(std::begin(variants), std::end(variants));
+
+        const std::size_t num_existing_variants = std::size(variants);
+        std::size_t variant_idx = 0;
+
         for (int64_t i = 0; i < std::ssize(positions_major); ++i) {
             // Skip non-reference positions.
             if (positions_minor[i] != 0) {
@@ -1172,6 +1207,16 @@ std::vector<Variant> general_decode_variants(
 
             const int64_t pos = positions_major[i];
             const std::string ref(1, draft[pos]);
+
+            while ((variant_idx < num_existing_variants) &&
+                   variant_ends_before_position(variants[variant_idx], seq_id, pos)) {
+                ++variant_idx;
+            }
+
+            if ((variant_idx < num_existing_variants) &&
+                variant_covers_position(variants[variant_idx], seq_id, pos)) {
+                continue;
+            }
 
             Variant var{
                     seq_id, pos, ref, {"."}, ".", {}, 0.0f, {{"GT", "0"}, {"GQ", "0"}}, i, (i + 1),
@@ -1185,9 +1230,7 @@ std::vector<Variant> general_decode_variants(
         }
     }
 
-    std::sort(std::begin(variants), std::end(variants), [](const Variant& a, const Variant& b) {
-        return std::tie(a.seq_id, a.pos) < std::tie(b.seq_id, b.pos);
-    });
+    std::sort(std::begin(variants), std::end(variants));
 
     // Normalize variants.
     std::vector<Variant> normalized_variants;

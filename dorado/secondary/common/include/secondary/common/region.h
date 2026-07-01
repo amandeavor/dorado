@@ -24,7 +24,15 @@ std::ostream& operator<<(std::ostream& os, const Region& region);
 
 bool operator<(const Region& l, const Region& r);
 
-std::string region_to_string(const Region& region);
+std::string to_string(const Region& region);
+
+std::ostream& operator<<(std::ostream& os, const RegionInt& region);
+
+std::string to_string(const RegionInt& region);
+
+bool is_valid(const RegionInt& region);
+
+RegionInt normalize_region(const RegionInt& region, int64_t seq_len);
 
 /**
  * \brief Parses a Htslib-style region from an input string. The input Htslib-style

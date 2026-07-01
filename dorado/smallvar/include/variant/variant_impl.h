@@ -53,6 +53,7 @@ struct ChromosomeReduceData {
     std::vector<secondary::Variant> variants_inference;
     std::vector<secondary::Variant> variants_simple;
     std::vector<secondary::Variant> variants_merged;
+    std::vector<secondary::RegionInt> selected_regions;
     std::vector<secondary::IntervalInt64> processed_regions;
 };
 // clang-format on
@@ -239,6 +240,7 @@ void worker_separate_decode_data(utils::AsyncQueue<DecodeData>& input_queue,
  * \param pass_min_qual Minimum QUAL required to mark decoded variants as PASS.
  * \param ambig_ref Whether ambiguous reference bases are allowed during variant decoding.
  * \param gvcf Whether non-variant positions should be emitted as gVCF records.
+ * \param ploidy Ploidy used for gVCF reference genotypes.
  * \param flank_trim Number of bases to trim from each processed interval before merge filtering.
  * \param variant_candidate_source Source of candidate variant positions.
  */
@@ -258,6 +260,7 @@ void worker_variant_calling_reduce(
         const float pass_min_qual,
         const bool ambig_ref,
         const bool gvcf,
+        const int32_t ploidy,
         const int32_t flank_trim,
         const secondary::VariantCandidateSource variant_candidate_source);
 

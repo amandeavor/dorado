@@ -107,6 +107,16 @@ CATCH_TEST_CASE("decode_variants", TEST_GROUP) {
         },
 
         TestCase{
+            "Return all reference positions (gVCF), one haplotype emits haploid reference genotype.",
+            "AC", {"AC"}, {0, 1}, {0, 0}, 3.0f, false, true, true, false, false,
+            {
+                Variant{0, 0, "A", {"."}, ".", {}, 60.0f, {{"GT", "0"}, {"GQ", "60"}}, 0, 1},
+                Variant{0, 1, "C", {"."}, ".", {}, 60.0f, {{"GT", "0"}, {"GQ", "60"}}, 1, 2},
+            },
+            false,
+        },
+
+        TestCase{
             "No variants, three haplotype.",
             "ACTG", {"ACTG", "ACTG", "ACTG"}, {0, 1, 2, 3}, {0, 0, 0, 0}, 3.0f, false, false, false, false, false, {}, false,
         },
@@ -115,7 +125,7 @@ CATCH_TEST_CASE("decode_variants", TEST_GROUP) {
             "One variant, one haplotype. No normalization.",
             "ACTG", {"AGTG"}, {0, 1, 2, 3}, {0, 0, 0, 0}, 3.0f, false, false, false, false, false,
             {
-                Variant{0, 1, "C", {"G"}, "PASS", {}, 70.0f, {{"GT", "1"}, {"GQ", "70"}}, 1, 2},
+                Variant{0, 1, "C", {"G"}, "PASS", {}, 60.0f, {{"GT", "1"}, {"GQ", "60"}}, 1, 2},
             },
             false,
         },
@@ -124,7 +134,7 @@ CATCH_TEST_CASE("decode_variants", TEST_GROUP) {
             "One variant, two haplotype. No normalization. The genotype information and the alleles are always normalized so they are valid, however.",
             "ACTG", {"AGTG", "ACTG"}, {0, 1, 2, 3}, {0, 0, 0, 0}, 3.0f, false, false, false, false, false,
             {
-                Variant{0, 1, "C", {"G"}, "PASS", {}, 70.0f, {{"GT", "0/1"}, {"GQ", "70"}}, 1, 2},
+                Variant{0, 1, "C", {"G"}, "PASS", {}, 60.0f, {{"GT", "0/1"}, {"GQ", "60"}}, 1, 2},
             },
             false,
         },
@@ -133,8 +143,8 @@ CATCH_TEST_CASE("decode_variants", TEST_GROUP) {
             "Two variants, two haplotypes. No normalization.",
             "ACATG", {"AGATG", "ACAAG"}, {0, 1, 2, 3, 4}, {0, 0, 0, 0, 0}, 3.0f, false, false, false, false, false,
             {
-                Variant{0, 1, "C", {"G"}, "PASS", {}, 70.0f, {{"GT", "0/1"}, {"GQ", "70"}}, 1, 2},
-                Variant{0, 3, "T", {"A"}, "PASS", {}, 70.0f, {{"GT", "0/1"}, {"GQ", "70"}}, 3, 4},
+                Variant{0, 1, "C", {"G"}, "PASS", {}, 60.0f, {{"GT", "0/1"}, {"GQ", "60"}}, 1, 2},
+                Variant{0, 3, "T", {"A"}, "PASS", {}, 60.0f, {{"GT", "0/1"}, {"GQ", "60"}}, 3, 4},
             },
             false,
         },
@@ -143,7 +153,7 @@ CATCH_TEST_CASE("decode_variants", TEST_GROUP) {
             "Multi-base SNP variant, two haplotypes. No normalization.",
             "ACTG", {"AGTG", "ACAG"}, {0, 1, 2, 3}, {0, 0, 0, 0}, 3.0f, false, false, false, false, false,
             {
-                Variant{0, 1, "CT", {"CA", "GT"}, "PASS", {}, 70.0f, {{"GT", "1/2"}, {"GQ", "70"}}, 1, 3},
+                Variant{0, 1, "CT", {"CA", "GT"}, "PASS", {}, 60.0f, {{"GT", "1/2"}, {"GQ", "60"}}, 1, 3},
             },
             false,
         },
@@ -153,7 +163,7 @@ CATCH_TEST_CASE("decode_variants", TEST_GROUP) {
             "Normalization. One SNP variant, one haplotype. No effect, SNPs cannot be normalized.",
             "AAAA", {"ACAA"}, {0, 1, 2, 3}, {0, 0, 0, 0}, 3.0f, false, false, true, false, false,
             {
-                Variant{0, 1, "A", {"C"}, "PASS", {}, 70.0f, {{"GT", "1"}, {"GQ", "70"}}, 1, 2},
+                Variant{0, 1, "A", {"C"}, "PASS", {}, 60.0f, {{"GT", "1"}, {"GQ", "60"}}, 1, 2},
             },
             false,
         },
@@ -162,7 +172,7 @@ CATCH_TEST_CASE("decode_variants", TEST_GROUP) {
             "Normalization. One deletion variant, one haplotype.",
             "CAAA", {"CA*A"}, {0, 1, 2, 3}, {0, 0, 0, 0}, 3.0f, false, false, true, false, false,
             {
-                Variant{0, 0, "CA", {"C"}, "PASS", {}, 70.0f, {{"GT", "1"}, {"GQ", "70"}}, 0, 3},
+                Variant{0, 0, "CA", {"C"}, "PASS", {}, 60.0f, {{"GT", "1"}, {"GQ", "60"}}, 0, 3},
             },
             false,
         },
@@ -171,7 +181,7 @@ CATCH_TEST_CASE("decode_variants", TEST_GROUP) {
             "No normalization. One deletion variant, one haplotype. Cannot be represented in the VCF, so puts a '.' in the ALT field.",
             "CAAA", {"CA*A"}, {0, 1, 2, 3}, {0, 0, 0, 0}, 3.0f, false, false, false, false, false,
             {
-                Variant{0, 2, "A", {"."}, ".", {}, 70.0f, {{"GT", "0"}, {"GQ", "70"}}, 2, 3},
+                Variant{0, 2, "A", {"."}, ".", {}, 60.0f, {{"GT", "0"}, {"GQ", "60"}}, 2, 3},
             },
             false,
         },
@@ -180,7 +190,7 @@ CATCH_TEST_CASE("decode_variants", TEST_GROUP) {
             "Normalization. One deletion variant at position 0, one haplotype. Deletion is the first event, cannot left-extend. Extend to the right with one reference base instead.",
             "ATAC", {"*TAC"}, {0, 1, 2, 3}, {0, 0, 0, 0}, 3.0f, false, false, true, false, false,
             {
-                Variant{0, 0, "AT", {"T"}, "PASS", {}, 70.0f, {{"GT", "1"}, {"GQ", "70"}}, 0, 2},
+                Variant{0, 0, "AT", {"T"}, "PASS", {}, 60.0f, {{"GT", "1"}, {"GQ", "60"}}, 0, 2},
             },
             false,
         },
@@ -189,21 +199,20 @@ CATCH_TEST_CASE("decode_variants", TEST_GROUP) {
             "Normalization. Single reference base which is deleted in the alt. Cannot be represented in the VCF, so puts a '.' in the ALT field.",
             "A", {"*"}, {0}, {0}, 3.0f, false, false, true, false, false,
             {
-                Variant{0, 0, "A", {"."}, ".", {}, 70.0f, {{"GT", "0"}, {"GQ", "70"}}, 0, 1},
+                Variant{0, 0, "A", {"."}, ".", {}, 60.0f, {{"GT", "0"}, {"GQ", "60"}}, 0, 1},
             },
             false,
         },
 
         TestCase{
-            "Return all reference positions (gVCF). This includes reference positions on variant sites as well.",
+            "Return all reference positions (gVCF), skipping positions covered by variants.",
             "ACTGA", {"ACAGA"}, {0, 1, 2, 3, 4}, {0, 0, 0, 0, 0}, 3.0f, false, true, true, false, false,
             {
-                Variant{0, 0, "A", {"."}, ".", {}, 70.0f, {{"GT", "0"}, {"GQ", "70"}}, 0, 1},
-                Variant{0, 1, "C", {"."}, ".", {}, 70.0f, {{"GT", "0"}, {"GQ", "70"}}, 1, 2},
-                Variant{0, 2, "T", {"A"}, "PASS", {}, 70.0f, {{"GT", "1"}, {"GQ", "70"}}, 2, 3},
-                Variant{0, 2, "T", {"."}, ".", {}, 0.0f, {{"GT", "0"}, {"GQ", "0"}}, 2, 3},
-                Variant{0, 3, "G", {"."}, ".", {}, 70.0f, {{"GT", "0"}, {"GQ", "70"}}, 3, 4},
-                Variant{0, 4, "A", {"."}, ".", {}, 70.0f, {{"GT", "0"}, {"GQ", "70"}}, 4, 5},
+                Variant{0, 0, "A", {"."}, ".", {}, 60.0f, {{"GT", "0"}, {"GQ", "60"}}, 0, 1},
+                Variant{0, 1, "C", {"."}, ".", {}, 60.0f, {{"GT", "0"}, {"GQ", "60"}}, 1, 2},
+                Variant{0, 2, "T", {"A"}, "PASS", {}, 60.0f, {{"GT", "1"}, {"GQ", "60"}}, 2, 3},
+                Variant{0, 3, "G", {"."}, ".", {}, 60.0f, {{"GT", "0"}, {"GQ", "60"}}, 3, 4},
+                Variant{0, 4, "A", {"."}, ".", {}, 60.0f, {{"GT", "0"}, {"GQ", "60"}}, 4, 5},
             },
             false,
         },
@@ -212,7 +221,7 @@ CATCH_TEST_CASE("decode_variants", TEST_GROUP) {
             "Prepending with a reference base because the entire variant is in an insertion.",
             "ACT***GCT", {"ACTAAAGCT"}, {0, 1, 2, 2, 2, 2, 3, 4, 5}, {0, 0, 0, 1, 2, 3, 0, 0, 0}, 3.0f, false, false, true, false, false,
             {
-                Variant{0, 2, "T", {"TAAA"}, "PASS", {}, 70.0f, {{"GT", "1"}, {"GQ", "70"}}, 2, 6},
+                Variant{0, 2, "T", {"TAAA"}, "PASS", {}, 60.0f, {{"GT", "1"}, {"GQ", "60"}}, 2, 6},
             },
             false,
         },
@@ -226,7 +235,7 @@ CATCH_TEST_CASE("decode_variants", TEST_GROUP) {
             {0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 0, 0, 0, 0, 0, 0, 0},
             3.0f, false, false, true, false, false,
             {
-                Variant{0, 6, "A", {"TC"}, "PASS", {}, 70.0f, {{"GT", "1"}, {"GQ", "70"}}, 4, 18},
+                Variant{0, 6, "A", {"TC"}, "PASS", {}, 60.0f, {{"GT", "1"}, {"GQ", "60"}}, 4, 18},
             },
             false,
         },
@@ -241,7 +250,7 @@ CATCH_TEST_CASE("decode_variants", TEST_GROUP) {
             {0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 0, 0, 0, 0, 0, 0, 0, 0},
             3.0f, false, false, true, true, true,
             {
-                Variant{0, 6, "TA", {"ATA", "TT"}, "PASS", {}, 70.0f, {{"GT", "1/2"}, {"GQ", "70"}}, 4, 20},
+                Variant{0, 6, "TA", {"ATA", "TT"}, "PASS", {}, 60.0f, {{"GT", "1/2"}, {"GQ", "60"}}, 4, 20},
             },
             false,
         },
@@ -258,7 +267,7 @@ CATCH_TEST_CASE("decode_variants", TEST_GROUP) {
             "Ambiguous reference IS allowed. Single base SNP is reported even though the reference has an N base.",
             "ANTG", {"AGTG", "ACTG"}, {0, 1, 2, 3}, {0, 0, 0, 0}, 3.0f, true, false, false, false, false,
             {
-                Variant{0, 1, "N", {"C", "G"}, "PASS", {}, 70.0f, {{"GT", "1/2"}, {"GQ", "70"}}, 1, 2},
+                Variant{0, 1, "N", {"C", "G"}, "PASS", {}, 60.0f, {{"GT", "1/2"}, {"GQ", "60"}}, 1, 2},
             },
             false,
         },
@@ -267,7 +276,7 @@ CATCH_TEST_CASE("decode_variants", TEST_GROUP) {
             "Ambiguous reference - variants not allowed. 2-base SNP extends into an N reference region. Only one base should be reported.",
             "ANTG", {"AGTG", "ACAG"}, {0, 1, 2, 3}, {0, 0, 0, 0}, 3.0f, false, false, false, false, false,
             {
-                Variant{0, 2, "T", {"A"}, "PASS", {}, 70.0f, {{"GT", "0/1"}, {"GQ", "70"}}, 2, 3},
+                Variant{0, 2, "T", {"A"}, "PASS", {}, 60.0f, {{"GT", "0/1"}, {"GQ", "60"}}, 2, 3},
             },
             false,
         },
@@ -276,7 +285,7 @@ CATCH_TEST_CASE("decode_variants", TEST_GROUP) {
             "Ambiguous reference IS allowed. 2-base SNP extends into an N reference region.",
             "ANTG", {"AGTG", "ACAG"}, {0, 1, 2, 3}, {0, 0, 0, 0}, 3.0f, true, false, false, false, false,
             {
-                Variant{0, 1, "NT", {"CA", "GT"}, "PASS", {}, 70.0f, {{"GT", "1/2"}, {"GQ", "70"}}, 1, 3},
+                Variant{0, 1, "NT", {"CA", "GT"}, "PASS", {}, 60.0f, {{"GT", "1/2"}, {"GQ", "60"}}, 1, 3},
             },
             false,
         },
@@ -295,7 +304,7 @@ CATCH_TEST_CASE("decode_variants", TEST_GROUP) {
             {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
             3.0f, false, false, false, false, false,
             {
-                Variant{0, 1, "AGCCATT", {"."}, ".", {}, 70.0f, {{"GT", "0"}, {"GQ", "70"}}, 1, 8},
+                Variant{0, 1, "AGCCATT", {"."}, ".", {}, 60.0f, {{"GT", "0/0"}, {"GQ", "60"}}, 1, 8},
             },
             false,
         },
@@ -309,7 +318,7 @@ CATCH_TEST_CASE("decode_variants", TEST_GROUP) {
             {0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
             3.0f, false, false, false, false, false,
             {
-                Variant{0, 0, "AGCCATT", {"."}, ".", {}, 70.0f, {{"GT", "0"}, {"GQ", "70"}}, 0, 7},
+                Variant{0, 0, "AGCCATT", {"."}, ".", {}, 60.0f, {{"GT", "0/0"}, {"GQ", "60"}}, 0, 7},
             },
             false,
         },
@@ -323,7 +332,7 @@ CATCH_TEST_CASE("decode_variants", TEST_GROUP) {
             {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
             3.0f, false, false, false, false, false,
             {
-                Variant{0, 6, "AGCCATT", {"."}, ".", {}, 70.0f, {{"GT", "0"}, {"GQ", "70"}}, 6, 13},
+                Variant{0, 6, "AGCCATT", {"."}, ".", {}, 60.0f, {{"GT", "0/0"}, {"GQ", "60"}}, 6, 13},
             },
             false,
         },
@@ -337,7 +346,7 @@ CATCH_TEST_CASE("decode_variants", TEST_GROUP) {
             {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
             3.0f, true, false, false, false, false,
             {
-                Variant{0, 1, "NNNNNAGCCATT", {"."}, ".", {}, 70.0f, {{"GT", "0"}, {"GQ", "70"}}, 1, 13},
+                Variant{0, 1, "NNNNNAGCCATT", {"."}, ".", {}, 60.0f, {{"GT", "0/0"}, {"GQ", "60"}}, 1, 13},
             },
             false,
         },
@@ -351,7 +360,7 @@ CATCH_TEST_CASE("decode_variants", TEST_GROUP) {
             {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
             3.0f, true, false, false, false, false,
             {
-                Variant{0, 0, "NNNNNAGCCATT", {"."}, ".", {}, 70.0f, {{"GT", "0"}, {"GQ", "70"}}, 0, 12},
+                Variant{0, 0, "NNNNNAGCCATT", {"."}, ".", {}, 60.0f, {{"GT", "0/0"}, {"GQ", "60"}}, 0, 12},
             },
             false,
         },
@@ -366,7 +375,7 @@ CATCH_TEST_CASE("decode_variants", TEST_GROUP) {
             {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
             3.0f, false, false, true, false, false,
             {
-                Variant{0, 0, "AAGCCATT", {"A"}, "PASS", {}, 70.0f, {{"GT", "1/1"}, {"GQ", "70"}}, 0, 8},
+                Variant{0, 0, "AAGCCATT", {"A"}, "PASS", {}, 60.0f, {{"GT", "1/1"}, {"GQ", "60"}}, 0, 8},
             },
             false,
         },
@@ -380,7 +389,7 @@ CATCH_TEST_CASE("decode_variants", TEST_GROUP) {
             {0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
             3.0f, false, false, true, false, false,
             {
-                Variant{0, 0, "AGCCATTA", {"A"}, "PASS", {}, 70.0f, {{"GT", "1/1"}, {"GQ", "70"}}, 0, 8},
+                Variant{0, 0, "AGCCATTA", {"A"}, "PASS", {}, 60.0f, {{"GT", "1/1"}, {"GQ", "60"}}, 0, 8},
             },
             false,
         },
@@ -394,7 +403,7 @@ CATCH_TEST_CASE("decode_variants", TEST_GROUP) {
             {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
             3.0f, false, false, true, false, false,
             {
-                Variant{0, 6, "AGCCATTA", {"A"}, "PASS", {}, 70.0f, {{"GT", "1/1"}, {"GQ", "70"}}, 6, 14},
+                Variant{0, 6, "AGCCATTA", {"A"}, "PASS", {}, 60.0f, {{"GT", "1/1"}, {"GQ", "60"}}, 6, 14},
             },
             false,
         },
@@ -409,7 +418,7 @@ CATCH_TEST_CASE("decode_variants", TEST_GROUP) {
             {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
             3.0f, true, false, true, false, false,
             {
-                Variant{0, 0, "ANNNNNAGCCATT", {"A"}, "PASS", {}, 70.0f, {{"GT", "1/1"}, {"GQ", "70"}}, 0, 13},
+                Variant{0, 0, "ANNNNNAGCCATT", {"A"}, "PASS", {}, 60.0f, {{"GT", "1/1"}, {"GQ", "60"}}, 0, 13},
             },
             false,
         },
@@ -423,7 +432,7 @@ CATCH_TEST_CASE("decode_variants", TEST_GROUP) {
             {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
             3.0f, true, false, true, false, false,
             {
-                Variant{0, 0, "NNNNNAGCCATTA", {"A"}, "PASS", {}, 70.0f, {{"GT", "1/1"}, {"GQ", "70"}}, 0, 13},
+                Variant{0, 0, "NNNNNAGCCATTA", {"A"}, "PASS", {}, 60.0f, {{"GT", "1/1"}, {"GQ", "60"}}, 0, 13},
             },
             false,
         },
@@ -437,7 +446,7 @@ CATCH_TEST_CASE("decode_variants", TEST_GROUP) {
             {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
             80.0f, false, false, true, false, false,
             {
-                Variant{0, 0, "AAGCCATT", {"A"}, "LowQual", {}, 70.0f, {{"GT", "1/1"}, {"GQ", "70"}}, 0, 8},
+                Variant{0, 0, "AAGCCATT", {"A"}, "LowQual", {}, 60.0f, {{"GT", "1/1"}, {"GQ", "60"}}, 0, 8},
             },
             false,
         },
@@ -496,9 +505,9 @@ CATCH_TEST_CASE("decode_variants", TEST_GROUP) {
             {0, 0, 0, 0, 0, 0, 1, 0, 0, 0},
             3.0f, false, false, false, false, false,
             {
-                Variant{0, 3, "A", {"."}, ".", {}, 70.0f, {{"GT", "0"}, {"GQ", "70"}}, 3, 4},           // V1
-                Variant{0, 5, "AA", {"."}, ".", {}, 70.0f, {{"GT", "0"}, {"GQ", "70"}}, 5, 8},          // V2
-                Variant{0, 8, "A", {"."}, ".", {}, 70.0f, {{"GT", "0"}, {"GQ", "70"}}, 9, 10},          // V3
+                Variant{0, 3, "A", {"."}, ".", {}, 60.0f, {{"GT", "0/0"}, {"GQ", "60"}}, 3, 4},           // V1
+                Variant{0, 5, "AA", {"."}, ".", {}, 60.0f, {{"GT", "0/0"}, {"GQ", "60"}}, 5, 8},          // V2
+                Variant{0, 8, "A", {"."}, ".", {}, 60.0f, {{"GT", "0/0"}, {"GQ", "60"}}, 9, 10},          // V3
             },
             false,
         },
@@ -512,9 +521,9 @@ CATCH_TEST_CASE("decode_variants", TEST_GROUP) {
             {0, 0, 0, 0, 0, 0, 1, 0, 0, 0},
             3.0f, false, false, true, false, false,
             {
-                Variant{0, 2, "CA", {"C"}, "PASS", {}, 70.0f, {{"GT", "1/1"}, {"GQ", "70"}}, 2, 4},             // V1
-                Variant{0, 4, "AAA", {"A", "ACC"}, "PASS", {}, 70.0f, {{"GT", "1/2"}, {"GQ", "70"}}, 4, 8},     // V2
-                Variant{0, 7, "AA", {"A"}, "PASS", {}, 70.0f, {{"GT", "0/1"}, {"GQ", "70"}}, 8, 10},            // V3
+                Variant{0, 2, "CA", {"C"}, "PASS", {}, 60.0f, {{"GT", "1/1"}, {"GQ", "60"}}, 2, 4},             // V1
+                Variant{0, 4, "AAA", {"A", "ACC"}, "PASS", {}, 60.0f, {{"GT", "1/2"}, {"GQ", "60"}}, 4, 8},     // V2
+                Variant{0, 7, "AA", {"A"}, "PASS", {}, 60.0f, {{"GT", "0/1"}, {"GQ", "60"}}, 8, 10},            // V3
             },
             false,
         },
@@ -528,7 +537,7 @@ CATCH_TEST_CASE("decode_variants", TEST_GROUP) {
             {0, 0, 0, 0, 0, 0, 1, 0, 0, 0},
             3.0f, false, false, true, true, true,
             {
-                Variant{0, 4, "AAAA", {"A", "CC"}, "PASS", {}, 70.0f, {{"GT", "1/2"}, {"GQ", "70"}}, 2, 10},
+                Variant{0, 4, "AAAA", {"A", "CC"}, "PASS", {}, 60.0f, {{"GT", "1/2"}, {"GQ", "60"}}, 2, 10},
             },
             false,
         },
@@ -568,9 +577,9 @@ CATCH_TEST_CASE("decode_variants", TEST_GROUP) {
             {0, 0, 0, 0, 0, 0, 1, 0, 0, 0},
             3.0f, false, false, false, false, false,
             {
-                Variant{0, 3, "A", {"."}, ".", {}, 70.0f, {{"GT", "0"}, {"GQ", "70"}}, 3, 4},           // V1
-                Variant{0, 5, "AA", {"."}, ".", {}, 70.0f, {{"GT", "0"}, {"GQ", "70"}}, 5, 8},          // V2
-                Variant{0, 8, "A", {"."}, ".", {}, 70.0f, {{"GT", "0"}, {"GQ", "70"}}, 9, 10},          // V3
+                Variant{0, 3, "A", {"."}, ".", {}, 60.0f, {{"GT", "0/0"}, {"GQ", "60"}}, 3, 4},           // V1
+                Variant{0, 5, "AA", {"."}, ".", {}, 60.0f, {{"GT", "0/0"}, {"GQ", "60"}}, 5, 8},          // V2
+                Variant{0, 8, "A", {"."}, ".", {}, 60.0f, {{"GT", "0/0"}, {"GQ", "60"}}, 9, 10},          // V3
             },
             false,
         },
@@ -586,9 +595,9 @@ CATCH_TEST_CASE("decode_variants", TEST_GROUP) {
             {0, 0, 0, 0, 0, 0, 1, 0, 0, 0},
             3.0f, false, false, true, false, false,
             {
-                Variant{0, 2, "CA", {"C"}, "PASS", {}, 70.0f, {{"GT", "1/1"}, {"GQ", "70"}}, 2, 4},             // V1
-                Variant{0, 4, "AAA", {"A", "AAC"}, "PASS", {}, 70.0f, {{"GT", "1/2"}, {"GQ", "70"}}, 4, 8},     // V2
-                Variant{0, 7, "AA", {"A"}, "PASS", {}, 70.0f, {{"GT", "0/1"}, {"GQ", "70"}}, 8, 10},            // V3
+                Variant{0, 2, "CA", {"C"}, "PASS", {}, 60.0f, {{"GT", "1/1"}, {"GQ", "60"}}, 2, 4},             // V1
+                Variant{0, 4, "AAA", {"A", "AAC"}, "PASS", {}, 60.0f, {{"GT", "1/2"}, {"GQ", "60"}}, 4, 8},     // V2
+                Variant{0, 7, "AA", {"A"}, "PASS", {}, 60.0f, {{"GT", "0/1"}, {"GQ", "60"}}, 8, 10},            // V3
             },
             false,
         },
@@ -602,7 +611,7 @@ CATCH_TEST_CASE("decode_variants", TEST_GROUP) {
             {0, 0, 0, 0, 0, 0, 1, 0, 0, 0},
             3.0f, false, false, true, true, true,
             {
-                Variant{0, 4, "AAAA", {"A", "AC"}, "PASS", {}, 70.0f, {{"GT", "1/2"}, {"GQ", "70"}}, 2, 10},
+                Variant{0, 4, "AAAA", {"A", "AC"}, "PASS", {}, 60.0f, {{"GT", "1/2"}, {"GQ", "60"}}, 2, 10},
             },
             false,
         },
@@ -660,9 +669,9 @@ CATCH_TEST_CASE("decode_variants", TEST_GROUP) {
             {0, 0, 0, 0, 0, 0, 1, 0, 0, 0},
             3.0f, false, false, false, false, false,
             {
-                Variant{0, 3, "A", {"."}, ".", {}, 70.0f, {{"GT", "0"}, {"GQ", "70"}}, 3, 4},       // V1
-                Variant{0, 5, "AA", {"."}, ".", {}, 70.0f, {{"GT", "0"}, {"GQ", "70"}}, 5, 8},      // V2
-                Variant{0, 8, "A", {"."}, ".", {}, 70.0f, {{"GT", "0"}, {"GQ", "70"}}, 9, 10},      // V3
+                Variant{0, 3, "A", {"."}, ".", {}, 60.0f, {{"GT", "0/0"}, {"GQ", "60"}}, 3, 4},       // V1
+                Variant{0, 5, "AA", {"."}, ".", {}, 60.0f, {{"GT", "0/0"}, {"GQ", "60"}}, 5, 8},      // V2
+                Variant{0, 8, "A", {"."}, ".", {}, 60.0f, {{"GT", "0/0"}, {"GQ", "60"}}, 9, 10},      // V3
             },
             false,
         },
@@ -677,9 +686,9 @@ CATCH_TEST_CASE("decode_variants", TEST_GROUP) {
             {0, 0, 0, 0, 0, 0, 1, 0, 0, 0},
             3.0f, false, false, true, false, false,
             {
-                Variant{0, 2, "CA", {"C"}, "PASS", {}, 70.0f, {{"GT", "1/1"}, {"GQ", "70"}}, 2, 4},     // V1
-                Variant{0, 4, "AAA", {"A"}, "PASS", {}, 70.0f, {{"GT", "0/1"}, {"GQ", "70"}}, 4, 8},    // V2
-                Variant{0, 7, "AA", {"A"}, "PASS", {}, 70.0f, {{"GT", "0/1"}, {"GQ", "70"}}, 8, 10},    // V3
+                Variant{0, 2, "CA", {"C"}, "PASS", {}, 60.0f, {{"GT", "1/1"}, {"GQ", "60"}}, 2, 4},     // V1
+                Variant{0, 4, "AAA", {"A"}, "PASS", {}, 60.0f, {{"GT", "0/1"}, {"GQ", "60"}}, 4, 8},    // V2
+                Variant{0, 7, "AA", {"A"}, "PASS", {}, 60.0f, {{"GT", "0/1"}, {"GQ", "60"}}, 8, 10},    // V3
             },
             false,
         },
@@ -693,7 +702,7 @@ CATCH_TEST_CASE("decode_variants", TEST_GROUP) {
             {0, 0, 0, 0, 0, 0, 1, 0, 0, 0},
             3.0f, false, false, true, false, true,
             {
-                Variant{0, 2, "CAAA", {"C", "CA"}, "PASS", {}, 70.0f, {{"GT", "1/2"}, {"GQ", "70"}}, 2, 10},
+                Variant{0, 2, "CAAA", {"C", "CA"}, "PASS", {}, 60.0f, {{"GT", "1/2"}, {"GQ", "60"}}, 2, 10},
             },
             false,
         },
@@ -707,7 +716,7 @@ CATCH_TEST_CASE("decode_variants", TEST_GROUP) {
             {0, 0, 0, 0, 0, 0, 1, 0, 0, 0},
             3.0f, false, false, true, true, true,
             {
-                Variant{0, 2, "CAAA", {"C", "CA"}, "PASS", {}, 70.0f, {{"GT", "1/2"}, {"GQ", "70"}}, 2, 10},
+                Variant{0, 2, "CAAA", {"C", "CA"}, "PASS", {}, 60.0f, {{"GT", "1/2"}, {"GQ", "60"}}, 2, 10},
             },
             false,
         },
@@ -724,7 +733,7 @@ CATCH_TEST_CASE("decode_variants", TEST_GROUP) {
             {0, 1, 2, 3, 4, 5, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
             3.0f, false, false, true, true, true,
             {
-                Variant{0, 0, "TTCCCATT", {"T"}, "PASS", {}, 70.0f, {{"GT", "0/1"}, {"GQ", "70"}}, 0, 18},
+                Variant{0, 0, "TTCCCATT", {"T"}, "PASS", {}, 60.0f, {{"GT", "0/1"}, {"GQ", "60"}}, 0, 18},
             },
             false,
         },
@@ -734,7 +743,11 @@ CATCH_TEST_CASE("decode_variants", TEST_GROUP) {
 
     CATCH_INFO(TEST_GROUP << " Test name: " << test_case.test_name);
 
-    const DecoderBase decoder(LabelSchemeType::HAPLOID);
+    const LabelSchemeType label_scheme = (std::size(test_case.consensus_seqs) == 1)
+                                                 ? LabelSchemeType::HAPLOID
+                                                 : LabelSchemeType::DIPLOID;
+
+    const DecoderBase decoder(label_scheme);
 
     // Sanity check that lengths of all elements of the test are good.
     const size_t expected_len = std::size(test_case.ref_seq_with_gaps);
