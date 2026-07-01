@@ -62,11 +62,11 @@ public:
 
     at::Tensor device_chunk_intervals;
     at::Tensor
-            device_chunk_table;  // Torch Tensor of shape (total_num_varlen_chunks, 2). Column 0 is chunk_start. Column 1 is chunk_length
-    at::Tensor conv_load_lut;    // Torch Tensor of shape total_num_granularity_
-    at::Tensor conv_store_lut;   // Torch Tensor of shape total_num_granularity_
+            device_chunk_table;  // shape = (total_num_varlen_chunks, 2). Column 0 is chunk_start. Column 1 is chunk_length
+    at::Tensor conv_load_lut;   // shape = (total_num_granularity_,)
+    at::Tensor conv_store_lut;  // shape = (total_num_granularity_,)
     at::Tensor
-            qkv_rope_lut;  // Torch tensor of shape total_num_granularity_, padded to be multiple of 4, explained in .cpp
+            qkv_rope_lut;  // shape = (total_num_granularity_,) padded to be multiple of 4, explained in .cpp
 
 private:
     at::Tensor workspace_;

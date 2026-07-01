@@ -120,7 +120,7 @@ TORCH_MODULE(TxEncoder);
 struct TxEncoderStackImpl : torch::nn::Module {
     TxEncoderStackImpl(const config::TxEncoderParams &params, const at::TensorOptions &options);
 
-    at::Tensor forward(const at::Tensor &x, [[maybe_unused]] AuxiliaryData *aux);
+    at::Tensor forward(const at::Tensor &x, AuxiliaryData *aux);
 
     bool use_koi_tiled{false};
     bool use_koi_volta_tiled{false};

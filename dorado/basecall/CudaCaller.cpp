@@ -67,7 +67,7 @@ std::unique_ptr<nn::AuxiliaryData> create_empty_input(at::Tensor &in,
     const std::int32_t max_chunk_size = config.basecaller.chunk_size();
     const bool is_tx_model = config.is_tx_model();
     if (is_tx_model) {
-        int first_conv_padding = config.convs[0].winlen / 2;
+        const int first_conv_padding = config.convs[0].winlen / 2U;
         assert((T % chunk_size_granularity) == 0);
         in = torch::empty({C, (N * T) + (N * (T / chunk_size_granularity) * first_conv_padding)},
                           in_options);
@@ -442,8 +442,8 @@ CudaCaller::BatchDimsAndMaxSizes CudaCaller::calculate_batch_sizes(
     // (adaptive sampling) we only want one (short) chunk size so that all those reads go into
     // the same queue and complete as fast as possible.
 
-    // ? Creation of shorter chunk size queue should be skipped for VCS Tx right ?
-    if (pipeline_type == PipelineType::simplex && !variable_chunk_sizes) {
+    if (pipeline_type == PipelineType::simplex &&
+        !(variable_chunk_sizes && model_config.is_tx_model())) {
         const char *env_extra_chunk_sizes = std::getenv("DORADO_EXTRA_CHUNK_SIZES");
         if (env_extra_chunk_sizes != nullptr) {
             constexpr char SEPARATOR = ';';

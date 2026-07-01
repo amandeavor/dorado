@@ -466,8 +466,10 @@ void TxEncoderImpl::koi_forward(utils::ScaledTensor &scaled_tensor,
         //Rotary embedding as a torch tensor
         auto rot_bfrs = self_attn->rotary_emb->named_buffers();
         auto max_T = 16 * (rot_bfrs["sin_freqs"].size(0) / 16);
-        if (aux) {
-            assert(max_T >= aux->max_chunk_size_tx_enc());
+        if (aux && (max_T < aux->max_chunk_size_tx_enc())) {
+            throw std::runtime_error(
+                    "seq_length of pre-computed sincos RoPE buffers is not big enough to "
+                    "accommodate requested chunk_size");
         }
         sincos_bfr = torch::empty({max_T, D / 2, 2}, f16_opts);
         sincos_bfr.select(2, 0) = rot_bfrs["sin_freqs"].slice(0, 0, max_T).view({max_T, D / 2});
@@ -577,8 +579,6 @@ void TxEncoderImpl::koi_forward(utils::ScaledTensor &scaled_tensor,
         utils::ScopedProfileRange spr("OUTP", 3);
         res = koi_linear(stream, &out_attn_mk, &proj_w, &proj_b, &out_proj_mn,
                          ctr[1].data_ptr<int>());
-        C10_CUDA_CHECK(cudaGetLastError());
-        C10_CUDA_CHECK(cudaDeviceSynchronize());
     }
     if (res == KOI_SUCCESS && ++calls) {
         // RMS residual
@@ -849,17 +849,19 @@ at::Tensor TxEncoderStackImpl::forward(const at::Tensor &x, [[maybe_unused]] Aux
             int p = 256 / T;
             N += ((N % p) == 0) ? 0 : (p - (N % p));
             if (N > aux->max_num_granularity()) {
-                spdlog::error(
+                throw std::runtime_error(
                         "Tx Encoder total_num_granularity is exceeding "
-                        "max_num_granularity\ntotal_num_granularity = {}, max_num_granularity = {}",
-                        aux->total_num_granularity(), aux->max_num_granularity());
+                        "max_num_granularity\n"
+                        "total_num_granularity = " +
+                        std::to_string(aux->total_num_granularity()) +
+                        ", max_num_granularity = " + std::to_string(aux->max_num_granularity()));
             }
             assert(T == 64);
 
             auto stream = at::cuda::getCurrentCUDAStream().stream();
-            koi_vcs_sup_fill_qkv_rope_lut(stream, aux->total_num_varlen_chunks(), T,
-                                          aux->device_chunk_table.data_ptr<int>(),
-                                          aux->qkv_rope_lut.data_ptr<int>());
+            koi_vcs_tx_fill_qkv_rope_lut(stream, aux->total_num_varlen_chunks(), T,
+                                         aux->device_chunk_table.data_ptr<int>(),
+                                         aux->qkv_rope_lut.data_ptr<int>());
         } else {
             N = static_cast<int>(x.size(0));
             T = static_cast<int>(x.size(1));

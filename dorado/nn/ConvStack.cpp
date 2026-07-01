@@ -157,8 +157,7 @@ void ConvStackImpl::run_koi(WorkingMemory &wm, const AuxiliaryData *const aux) {
     }
 }
 
-// Should tensor be passed in by reference? All it does is pass the handle right?
-at::Tensor ConvStackImpl::run_koi_vcs_tx(at::Tensor x, AuxiliaryData *aux) {
+at::Tensor ConvStackImpl::run_koi_vcs_tx(at::Tensor x, AuxiliaryData *const aux) {
     for (auto &layer : layers) {
         x = layer.run_koi_vcs_tx(x, aux);
     }
@@ -373,7 +372,8 @@ void ConvStackImpl::ConvLayer::run_koi(WorkingMemory &wm, const AuxiliaryData *c
     }
 }
 
-at::Tensor ConvStackImpl::ConvLayer::run_koi_vcs_tx(at::Tensor &conv_input, AuxiliaryData *aux) {
+at::Tensor ConvStackImpl::ConvLayer::run_koi_vcs_tx(at::Tensor &conv_input,
+                                                    AuxiliaryData *const aux) {
     // Implementation supposes chunk_table remains unchanged since entering ConvStack
     // Eg: S | L            S = Start, L = Length
     //     0 | 768
@@ -435,7 +435,7 @@ at::Tensor ConvStackImpl::ConvLayer::run_koi_vcs_tx(at::Tensor &conv_input, Auxi
         conv_output = torch::empty({M_out * C_out}, opts_f16);
     }
 
-    koi_vcs_sup_fill_conv_load_store_lut(
+    koi_vcs_tx_fill_conv_load_store_lut(
             stream, aux->total_num_varlen_chunks(), aux->device_chunk_table.data_ptr<int>(),
             // It makes sense for Load and Store LUTs to be in AuxiliaryData, as their
             // shape depend on total_num_granularity, which changes between batches
@@ -443,10 +443,10 @@ at::Tensor ConvStackImpl::ConvLayer::run_koi_vcs_tx(at::Tensor &conv_input, Auxi
             conv_layer_num == 0 ? nullptr : conv_input.data_ptr(), M_input, C_in,
             aux->chunk_size_granularity(), stride, padding, next_layer_padding);
 
-    koi_vcs_sup_cnn(stream, conv_layer_num, conv_input.data_ptr(), w_device.data_ptr(),
-                    conv_output.data_ptr(), b_device.data_ptr(), aux->conv_load_lut.data_ptr<int>(),
-                    aux->conv_store_lut.data_ptr<int>(), aux->total_num_granularity(), M_input,
-                    M_out, winlen, C_in, C_out, padding, stride, use_f32_accum);
+    koi_vcs_tx_cnn(stream, conv_layer_num, conv_input.data_ptr(), w_device.data_ptr(),
+                   conv_output.data_ptr(), b_device.data_ptr(), aux->conv_load_lut.data_ptr<int>(),
+                   aux->conv_store_lut.data_ptr<int>(), aux->total_num_granularity(), M_input,
+                   M_out, winlen, C_in, C_out, padding, stride, use_f32_accum);
 
     // `chunk_size_granularity` needs to be updated according to convolution stride
     aux->apply_stride_to_chunk_size_granularity(stride);

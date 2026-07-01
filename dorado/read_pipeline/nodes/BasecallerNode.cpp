@@ -349,7 +349,7 @@ void BasecallerNode::basecall_worker_thread(int worker_id) {
 
         const bool is_full_batch = current_batch.chunks.size() == batch_size;
         const bool is_full_chunks_size = current_batch.chunks_size == max_worker_chunks_size;
-        const bool is_full_batch_tx_vcs = current_batch.chunks_size > batch_size * chunk_size;
+        const bool is_full_batch_tx_vcs = current_batch.chunks_size >= batch_size * chunk_size;
         if (m_variable_chunk_sizes ? (m_is_tx_model ? is_full_batch_tx_vcs : is_full_chunks_size)
                                    : is_full_batch) {
             throw std::logic_error("Current batch is already full");
@@ -422,8 +422,8 @@ void BasecallerNode::basecall_worker_thread(int worker_id) {
             if (m_variable_chunk_sizes) {
                 size_t min_working_unit = m_is_tx_model ? m_chunk_size_granularity : stride;
                 size_t overhang = input_slice.size(1) % min_working_unit;
-                while (overhang !=
-                       0) {  // needed for input_slice.size(1) < (min_working_unit - overhang)
+                // needed for input_slice.size(1) < (min_working_unit - overhang)
+                while (overhang != 0) {
                     input_slice = at::concat(
                             {input_slice,
                              input_slice.index({Ellipsis, Slice(0, min_working_unit - overhang)})},
