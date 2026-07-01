@@ -24,11 +24,11 @@ std::ostream& operator<<(std::ostream& os, const Region& region);
 
 bool operator<(const Region& l, const Region& r);
 
-std::string region_to_string(const Region& region);
+std::string to_string(const Region& region);
 
 std::ostream& operator<<(std::ostream& os, const RegionInt& region);
 
-std::string region_to_string(const RegionInt& region);
+std::string to_string(const RegionInt& region);
 
 bool is_valid(const RegionInt& region);
 

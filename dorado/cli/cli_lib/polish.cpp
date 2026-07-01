@@ -1009,7 +1009,7 @@ void run_polishing(const Options& opt,
                       batch_interval.start, batch_interval.end);
         for (std::size_t i = 0; i < std::size(region_batch); ++i) {
             spdlog::debug("[run_polishing] region_batch i = {}: {}", i,
-                          secondary::region_to_string(region_batch[i]));
+                          secondary::to_string(region_batch[i]));
         }
 
         std::vector<std::vector<secondary::ConsensusResult>> all_results_cons;

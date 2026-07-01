@@ -924,7 +924,7 @@ std::vector<std::vector<secondary::Region>> resolve_input_regions(
                 throw std::runtime_error(
                         "Sequence name from a custom specified region not found in the input "
                         "sequence file! region: " +
-                        region_to_string(region));
+                        to_string(region));
             }
             const auto [ref_id, ref_len] = it->second;
             ret[ref_id].emplace_back(secondary::Region{region.name, region.start, region.end});
@@ -1101,8 +1101,7 @@ void run_variant_calling(const Options& opt,
                 ref_regions = std::move(merged_regions);
             }
             for (const auto& region : ref_regions) {
-                spdlog::debug("Added {} to hemizygous regions",
-                              secondary::region_to_string(region));
+                spdlog::debug("Added {} to hemizygous regions", secondary::to_string(region));
             }
         }
     }

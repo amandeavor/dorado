@@ -23,7 +23,7 @@ bool operator<(const Region& l, const Region& r) {
     return std::tie(l.name, l.start, l.end) < std::tie(r.name, r.start, r.end);
 }
 
-std::string region_to_string(const Region& region) {
+std::string to_string(const Region& region) {
     std::ostringstream oss;
     oss << region;
     return std::move(oss).str();
@@ -34,7 +34,7 @@ std::ostream& operator<<(std::ostream& os, const RegionInt& region) {
     return os;
 }
 
-std::string region_to_string(const RegionInt& region) {
+std::string to_string(const RegionInt& region) {
     std::ostringstream oss;
     oss << region;
     return std::move(oss).str();
@@ -50,7 +50,7 @@ bool is_valid(const RegionInt& region) {
 RegionInt normalize_region(const RegionInt& region, const int64_t seq_len) {
     if (!is_valid(region)) {
         throw std::runtime_error{"Cannot normalize a region that is not valid. Given: " +
-                                 region_to_string(region)};
+                                 to_string(region)};
     }
     return RegionInt{
             .seq_id = region.seq_id,
@@ -138,8 +138,7 @@ void validate_regions(const std::vector<Region>& regions,
         std::vector<interval_tree::Interval<int64_t, int64_t>> results =
                 trees[region.name].findOverlapping(region.start, region.end - 1);
         if (std::size(results) > 1) {
-            throw std::runtime_error("Region validation failed: region '" +
-                                     region_to_string(region) +
+            throw std::runtime_error("Region validation failed: region '" + to_string(region) +
                                      "' overlaps other regions. Regions have to be unique.");
         }
     }
@@ -153,7 +152,7 @@ void validate_regions(const std::vector<Region>& regions,
         const auto it = len_dict.find(region.name);
         if (it == std::end(len_dict)) {
             throw std::runtime_error{"Region validation failed: sequence name for region '" +
-                                     region_to_string(region) +
+                                     to_string(region) +
                                      "' does not exist in the input sequence file."};
         }
         const int64_t seq_len = it->second;
@@ -161,8 +160,7 @@ void validate_regions(const std::vector<Region>& regions,
         if ((region.start >= seq_len) || (region.end > seq_len) ||
             ((region.start >= 0) && (region.end >= 0) && (region.start >= region.end))) {
             throw std::runtime_error{
-                    "Region validation failed: coordinates for region '" +
-                    region_to_string(region) +
+                    "Region validation failed: coordinates for region '" + to_string(region) +
                     "' are not valid. Sequence length: " + std::to_string(seq_len)};
         }
     }
