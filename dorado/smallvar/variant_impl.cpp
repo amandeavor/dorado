@@ -22,6 +22,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cassert>
+#include <cmath>
 #include <fstream>
 #include <memory>
 #include <span>
@@ -29,6 +30,7 @@
 #include <stdexcept>
 #include <string_view>
 #include <tuple>
+#include <utility>
 
 #if DORADO_CUDA_BUILD
 #include "torch_utils/cuda_utils.h"
@@ -49,6 +51,8 @@
 namespace dorado::smallvar {
 
 namespace {
+
+const std::vector<std::pair<int64_t, float>> GVCF_REFERENCE_BLOCK_GQ_MARGINS{{0, 0.5f}, {10, 5.0f}};
 
 std::vector<secondary::DeviceInfo> init_devices(const std::string& devices_str) {
     std::vector<secondary::DeviceInfo> devices;
@@ -1355,12 +1359,60 @@ secondary::Variant make_gvcf_reference_record(const int32_t seq_id,
     return ret;
 }
 
-bool is_single_base_gvcf_reference_record(const secondary::Variant& var) {
-    return (var.filter == ".") && (std::size(var.alts) == 1) && (var.alts.front() == ".") &&
-           std::empty(var.info) && (std::size(var.ref) == 1);
-}
+void compact_gvcf_reference_records(std::vector<secondary::Variant>& variants,
+                                    const std::vector<std::pair<int64_t, float>>& gq_margins) {
+    const auto is_single_base_gvcf_reference_record = [](const secondary::Variant& var) {
+        return (var.filter == ".") && (std::size(var.alts) == 1) && (var.alts.front() == ".") &&
+               std::empty(var.info) && (std::size(var.ref) == 1);
+    };
 
-void compact_gvcf_reference_records(std::vector<secondary::Variant>& variants) {
+    const auto get_record_gq_margin = [](const float gq,
+                                         const std::vector<std::pair<int64_t, float>>& margins) {
+        if (std::empty(margins)) {
+            return 0.0f;
+        }
+        const auto it = std::upper_bound(std::cbegin(margins), std::cend(margins), gq,
+                                         [](const float val, const auto& margin) {
+                                             return val < static_cast<float>(margin.first);
+                                         });
+        if (it == std::cbegin(margins)) {
+            return it->second;
+        }
+        return std::prev(it)->second;
+    };
+
+    const auto is_same_genotype = [](const secondary::Variant& lhs, const secondary::Variant& rhs) {
+        const std::string* lhs_gt = nullptr;
+        const std::string* rhs_gt = nullptr;
+
+        for (const auto& val : lhs.genotype) {
+            if (val.first == "GT") {
+                lhs_gt = &val.second;
+                break;
+            }
+        }
+        for (const auto& val : rhs.genotype) {
+            if (val.first == "GT") {
+                rhs_gt = &val.second;
+                break;
+            }
+        }
+
+        return lhs_gt && rhs_gt && (*lhs_gt == *rhs_gt);
+    };
+
+    const auto set_gq = [](secondary::Variant& var, const float gq) {
+        var.qual = gq;
+
+        const std::string gq_str = std::to_string(static_cast<int32_t>(std::round(gq)));
+        for (auto val = std::rbegin(var.genotype); val != std::rend(var.genotype); ++val) {
+            if (val->first == "GQ") {
+                val->second = gq_str;
+                break;
+            }
+        }
+    };
+
     std::vector<secondary::Variant> compacted;
     compacted.reserve(std::size(variants));
 
@@ -1371,18 +1423,27 @@ void compact_gvcf_reference_records(std::vector<secondary::Variant>& variants) {
             continue;
         }
 
+        const float first_gq = variants[i].qual;
+        const float gq_margin = get_record_gq_margin(first_gq, gq_margins);
+        float min_gq = first_gq;
+
         std::size_t j = i + 1;
         while ((j < std::size(variants)) && is_single_base_gvcf_reference_record(variants[j]) &&
                (variants[j].seq_id == variants[i].seq_id) &&
-               (variants[j].pos == (variants[j - 1].pos + 1)) &&
-               (variants[j].qual == variants[i].qual) &&
-               (variants[j].genotype == variants[i].genotype)) {
+               (variants[j].pos == (variants[j - 1].pos + 1))) {
+            const float current_gq = variants[j].qual;
+            if ((std::fabs(current_gq - first_gq) > gq_margin) ||
+                !is_same_genotype(variants[j], variants[i])) {
+                break;
+            }
+            min_gq = std::min(min_gq, current_gq);
             ++j;
         }
 
         secondary::Variant block = std::move(variants[i]);
         if (j > (i + 1)) {
             set_gvcf_reference_block_end(block, variants[j - 1].pos + 1);
+            set_gq(block, min_gq);
         }
         compacted.emplace_back(std::move(block));
         i = j;
@@ -1645,7 +1706,8 @@ void worker_variant_calling_reduce(
                                                                ploidy);
             std::stable_sort(std::begin(reduce_data.variants_merged),
                              std::end(reduce_data.variants_merged));
-            compact_gvcf_reference_records(reduce_data.variants_merged);
+            compact_gvcf_reference_records(reduce_data.variants_merged,
+                                           GVCF_REFERENCE_BLOCK_GQ_MARGINS);
         }
 
         if (!std::empty(hemizygous_regions)) {

@@ -60,12 +60,12 @@ chr20	1959	1
   chr20 1534 1812
   chr20 1714 2001
   chr20 1860 2145
-  21
+  16
   chr20 1000 . G <*> . END=1345 GT:GQ:LEN 0/0:60:346
   chr20 1346 . G <*> . END=1471 GT:GQ:LEN 0/0:60:126
   chr20 1472 . T G PASS . GT:GQ 0/1:42
   chr20 1473 . C <*> . END=1555 GT:GQ:LEN 0/0:60:83
-  chr20 1556 . C . . . GT:GQ 0/0:50
+  chr20 1556 . C <*> . END=1557 GT:GQ:LEN 0/0:50:2
   chr20 1615 . C . . . GT:GQ 0/0:54
   chr20 1472 . T G PASS . GT:GQ 0/1:42
   chr20 1959 . T G PASS . GT:GQ 0/1:44
