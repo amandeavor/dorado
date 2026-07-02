@@ -31,6 +31,7 @@ public:
 private:
     HtsFilePtr m_vcf_fp;
     BcfHdrPtr m_header;
+    bool m_include_gvcf_headers = false;
 };
 
 }  // namespace dorado::secondary

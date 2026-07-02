@@ -6,6 +6,7 @@
 #include <htslib/hts.h>
 #include <htslib/vcf.h>
 
+#include <algorithm>
 #include <sstream>
 #include <stdexcept>
 #include <string_view>
@@ -37,7 +38,8 @@ VCFWriter::VCFWriter(const std::filesystem::path& in_fn,
                      const std::vector<std::pair<std::string, int64_t>>& contigs,
                      const bool include_gvcf_headers)
         : m_vcf_fp{hts_open(in_fn.string().c_str(), "w"), HtsFileDestructor()},
-          m_header{bcf_hdr_init("w"), BcfHdrDestructor()} {
+          m_header{bcf_hdr_init("w"), BcfHdrDestructor()},
+          m_include_gvcf_headers{include_gvcf_headers} {
     if (!m_vcf_fp) {
         throw std::runtime_error("Failed to open VCF file: " + in_fn.string());
     }
@@ -101,10 +103,20 @@ void VCFWriter::write_variant(const Variant& variant) {
 
     ensure_shared_buffer_initialized(*record);
 
+    std::vector<std::string> alts = variant.alts;
+
+    // Add "<*>" to non-reference records in gVCF output.
+    if (m_include_gvcf_headers) {
+        if (!is_reference_record(variant) &&
+            (std::find(std::cbegin(alts), std::cend(alts), "<*>") == std::cend(alts))) {
+            alts.emplace_back("<*>");
+        }
+    }
+
     // Format the alleles for Bcftools.
     std::ostringstream os_alleles;
     os_alleles << variant.ref;
-    for (const std::string_view alt : variant.alts) {
+    for (const std::string_view alt : alts) {
         os_alleles << ',' << alt;
     }
 

@@ -63,4 +63,10 @@ bool is_valid(const Variant& var) {
     return true;
 }
 
+bool is_reference_record(const Variant& var) {
+    return (var.filter == ".") || std::empty(var.alts) ||
+           ((std::size(var.alts) == 1) &&
+            ((var.alts.front() == ".") || (var.alts.front() == "<*>")));
+}
+
 }  // namespace dorado::secondary

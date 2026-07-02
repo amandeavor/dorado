@@ -30,4 +30,6 @@ bool operator<(const Variant& lhs, const Variant& rhs);
 
 bool is_valid(const Variant& var);
 
+bool is_reference_record(const Variant& var);
+
 }  // namespace dorado::secondary

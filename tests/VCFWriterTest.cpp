@@ -198,6 +198,7 @@ CATCH_TEST_CASE("VCFWriter writes valid VCF output and rejects invalid inputs", 
     CATCH_SECTION("writes gVCF header metadata when requested") {
         {
             VCFWriter writer(data.vcf_path, data.filters, data.contigs, true);
+            writer.write_variant(data.first_variant);
         }
 
         const std::string vcf_text = ReadFileIntoString(data.vcf_path);
@@ -210,6 +211,7 @@ CATCH_TEST_CASE("VCFWriter writes valid VCF output and rejects invalid inputs", 
                 Catch::Matchers::ContainsSubstring(
                         "##FORMAT=<ID=LEN,Number=1,Type=Integer,Description=\"Length of <*> "
                         "reference block\">"));
+        CATCH_CHECK_THAT(vcf_text, Catch::Matchers::ContainsSubstring("chr1\t10\t.\tA\tC,<*>"));
     }
 
     CATCH_SECTION("write_variant rejects filters missing from the header") {
