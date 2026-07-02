@@ -17,7 +17,6 @@ Candidate-filtered gVCF emits non-variant records for regions with no candidates
   [warning] Skipping basecaller compatibility checks for user-specified model override. The accuracy of the results is not guaranteed.
   [warning] Variant calling model is not compatible with the input BAM. This may produce inferior results.
   ##INFO=<ID=END,Number=1,Type=Integer,Description="End position of the reference block">
-  ##ALT=<ID=*,Description="Represents allele(s) other than observed.">
   ##FORMAT=<ID=LEN,Number=1,Type=Integer,Description="Length of <*> reference block">
   1
   chr20 1 T <*> . END=100 GT:GQ:LEN 0/0:60:100

@@ -74,8 +74,6 @@ VCFWriter::VCFWriter(const std::filesystem::path& in_fn,
                        "##INFO=<ID=END,Number=1,Type=Integer,Description=\"End position of the "
                        "reference block\">");
         bcf_hdr_append(m_header.get(),
-                       "##ALT=<ID=*,Description=\"Represents allele(s) other than observed.\">");
-        bcf_hdr_append(m_header.get(),
                        "##FORMAT=<ID=LEN,Number=1,Type=Integer,Description=\"Length of <*> "
                        "reference block\">");
     }

@@ -208,10 +208,6 @@ CATCH_TEST_CASE("VCFWriter writes valid VCF output and rejects invalid inputs", 
         CATCH_CHECK_THAT(
                 vcf_text,
                 Catch::Matchers::ContainsSubstring(
-                        "##ALT=<ID=*,Description=\"Represents allele(s) other than observed.\">"));
-        CATCH_CHECK_THAT(
-                vcf_text,
-                Catch::Matchers::ContainsSubstring(
                         "##FORMAT=<ID=LEN,Number=1,Type=Integer,Description=\"Length of <*> "
                         "reference block\">"));
     }
