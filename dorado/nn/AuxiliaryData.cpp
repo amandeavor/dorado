@@ -67,6 +67,17 @@ void AuxiliaryData::create_convolution_auxiliary_data([[maybe_unused]] const c10
 #endif
 }
 
+void AuxiliaryData::restore_convolution_auxiliary_data() {
+#if DORADO_CUDA_BUILD
+    if (!device_chunk_intervals.defined()) {
+        throw std::runtime_error("AuxiliaryData error: undefined chunk intervals!");
+    }
+    device_chunk_intervals.mul_(stride_);
+#else
+    throw std::runtime_error("AuxiliaryData error: unsupported code path!");
+#endif
+}
+
 void AuxiliaryData::create_lstm_auxiliary_data([[maybe_unused]] const at::Device& device,
                                                [[maybe_unused]] KoiThreads& thread_pool) {
 #if DORADO_CUDA_BUILD

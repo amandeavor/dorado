@@ -29,6 +29,7 @@ public:
     std::int32_t NT_out_max() const { return NT_in_max() / stride_; }
 
     void create_convolution_auxiliary_data(const c10::Device &device);
+    void restore_convolution_auxiliary_data();
 
     at::Tensor device_chunk_intervals;
 

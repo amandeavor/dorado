@@ -584,6 +584,9 @@ void CudaCaller::determine_batch_dims(const BasecallerCreationParams &params) {
                 time = std::min(time, time_this_iteration);
                 handle_cuda_result(cudaEventDestroy(start));
                 handle_cuda_result(cudaEventDestroy(stop));
+                if (aux) {
+                    aux->restore_convolution_auxiliary_data();
+                }
                 spdlog::trace("Auto batchsize {}: iteration:{}, ms/chunk {:8f} ms", m_device, i,
                               time_this_iteration);
             }
