@@ -58,22 +58,36 @@ variables:
   variables:
     MACOSX_DEPLOYMENT_TARGET: "14.0"
 
+.eks_runner:
+  tags: 
+    - linux
+    - prod
+    - eks
+    - standard  
+    - ${EKS_ARCH}
+    - ${EKS_SIZE}
+
 .linux_runner:
-  tags:
-    - ubuntu-20.04
-    - nvidia-docker
-    - on-prem
+  extends:
+    - .eks_runner
   variables:
+    EKS_ARCH: x86_64
+    EKS_SIZE: 2xlarge
     GIT_STRATEGY: clone   # temp hack due to https://gitlab.com/gitlab-org/gitlab-runner/-/work_items/38908 issues
 
 .linux_arm64_runner:
+  extends:
+    - .eks_runner
+  variables:
+    EKS_ARCH: arm64
+    EKS_SIZE: 2xlarge
+
+.linux_V100_runner:
   tags:
     - linux
-    - prod
-    - arm64
-    - eks
-    - 2xlarge
-    - standard
+    - nvidia-docker
+    - gpu-v100
+    - on-prem
 
 .linux_orin_cuda_12_runner:
   tags:
@@ -274,18 +288,14 @@ pre-commit:
   image: ${DORADO_PRECOMMIT}
   variables:
     GIT_SUBMODULE_STRATEGY: none
+    EKS_SIZE: small
   stage: pre-flight
   script:
     - echo "Pipeline source is ${CI_PIPELINE_SOURCE}"
     - pip install pre-commit
     - pre-commit run --all-files
-  tags:
-    - linux
-    - prod
-    - amd64
-    - eks
-    - docker
-    - small
+  extends:
+    - .linux_runner
 
 # Build stages
 
@@ -667,7 +677,7 @@ test:linux:x86:noble:
     ONT_PYTHON_URL: ${ONT_PYTHON_URL_PREFIX}/${ONT_PYTHON_FILENAME_LINUX_X86_313}
   extends:
     - .linux_test_dependencies
-    - .linux_runner
+    - .linux_V100_runner
     - .test_dorado
   needs:
     - build:linux:x86:noble
@@ -786,7 +796,7 @@ test:model_download:linux:x86:noble:
     ONT_PYTHON_URL: ${ONT_PYTHON_URL_PREFIX}/${ONT_PYTHON_FILENAME_LINUX_X86_313}
   extends:
     - .linux_test_dependencies
-    - .linux_runner
+    - .linux_V100_runner
     - .on_nightly_or_manual
   stage: test
   needs:

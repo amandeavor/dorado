@@ -159,6 +159,7 @@ regression_test_platforms:linux:x86:cuda12:
   image: ${DORADO_DOCKER_ROOT}/dorado-24.04-cuda-${CUDA}.0:1.1
   variables:
     BUILD_TYPE: Release
+    EKS_SIZE: small
     ONT_PYTHON_URL: ${ONT_PYTHON_URL_PREFIX}/${ONT_PYTHON_FILENAME_LINUX_X86_313}
   extends:
     - .linux_regression_dependencies
@@ -381,6 +382,7 @@ regression_tests:speed:email:
   variables:
     GIT_SUBMODULE_STRATEGY: normal
     ONT_PYTHON_URL: ${ONT_PYTHON_URL_PREFIX}/${ONT_PYTHON_FILENAME_LINUX_X86_313}
+    EKS_SIZE: small
   rules:
     - if: "$NIGHTLY_BUILD"
   script:
@@ -404,6 +406,9 @@ run_rebase:
   script: echo Will run rebase if required
   variables:
     GIT_STRATEGY: none
+    EKS_SIZE: small
+  extends:
+    - .linux_runner
   rules:
     - if: $CI_PIPELINE_SOURCE != 'merge_request_event'
       when: manual
@@ -442,6 +447,7 @@ rebase_dorado:
   image: ${DORADO_DOCKER_ROOT}/dorado-24.04-cuda-${CUDA}.0:1.1
   variables:
     ONT_PYTHON_URL: ${ONT_PYTHON_URL_PREFIX}/${ONT_PYTHON_FILENAME_LINUX_X86_313}
+    EKS_SIZE: small
   stage: rebase
   interruptible: false
   needs:
