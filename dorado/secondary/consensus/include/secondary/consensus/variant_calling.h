@@ -8,16 +8,21 @@
 #include "secondary/features/decoder_base.h"
 #include "variant_calling_sample.h"
 
+#include <array>
 #include <cstdint>
 #include <memory>
+#include <span>
 #include <string>
 #include <string_view>
 #include <tuple>
+#include <utility>
 #include <vector>
 
 namespace dorado::secondary {
 
 constexpr float VCF_MAX_GQ_CAP = 60.0f;
+constexpr std::array<std::pair<int64_t, float>, 2> DEFAULT_GVCF_REFERENCE_BLOCK_GQ_MARGINS{
+        {{0, 0.5f}, {10, 5.0f}}};
 
 /**
  * \brief Utility function to check if a variant ends before a given position on a reference.
@@ -104,6 +109,7 @@ std::vector<Variant> general_decode_variants(
         bool return_all,
         bool normalize,
         bool merge_overlapping,
-        bool merge_adjacent);
+        bool merge_adjacent,
+        std::span<const std::pair<int64_t, float>> gvcf_reference_block_gq_margins);
 
 }  // namespace dorado::secondary

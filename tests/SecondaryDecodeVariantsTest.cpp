@@ -110,8 +110,7 @@ CATCH_TEST_CASE("decode_variants", TEST_GROUP) {
             "Return all reference positions (gVCF), one haplotype emits haploid reference genotype.",
             "AC", {"AC"}, {0, 1}, {0, 0}, 3.0f, false, true, true, false, false,
             {
-                Variant{0, 0, "A", {"."}, ".", {}, 60.0f, {{"GT", "0"}, {"GQ", "60"}}, 0, 1},
-                Variant{0, 1, "C", {"."}, ".", {}, 60.0f, {{"GT", "0"}, {"GQ", "60"}}, 1, 2},
+                Variant{0, 0, "A", {"<*>"}, ".", {{"END", "2"}}, 60.0f, {{"GT", "0"}, {"GQ", "60"}, {"LEN", "2"}}, 0, 2},
             },
             false,
         },
@@ -208,11 +207,9 @@ CATCH_TEST_CASE("decode_variants", TEST_GROUP) {
             "Return all reference positions (gVCF), skipping positions covered by variants.",
             "ACTGA", {"ACAGA"}, {0, 1, 2, 3, 4}, {0, 0, 0, 0, 0}, 3.0f, false, true, true, false, false,
             {
-                Variant{0, 0, "A", {"."}, ".", {}, 60.0f, {{"GT", "0"}, {"GQ", "60"}}, 0, 1},
-                Variant{0, 1, "C", {"."}, ".", {}, 60.0f, {{"GT", "0"}, {"GQ", "60"}}, 1, 2},
+                Variant{0, 0, "A", {"<*>"}, ".", {{"END", "2"}}, 60.0f, {{"GT", "0"}, {"GQ", "60"}, {"LEN", "2"}}, 0, 2},
                 Variant{0, 2, "T", {"A"}, "PASS", {}, 60.0f, {{"GT", "1"}, {"GQ", "60"}}, 2, 3},
-                Variant{0, 3, "G", {"."}, ".", {}, 60.0f, {{"GT", "0"}, {"GQ", "60"}}, 3, 4},
-                Variant{0, 4, "A", {"."}, ".", {}, 60.0f, {{"GT", "0"}, {"GQ", "60"}}, 4, 5},
+                Variant{0, 3, "G", {"<*>"}, ".", {{"END", "5"}}, 60.0f, {{"GT", "0"}, {"GQ", "60"}, {"LEN", "2"}}, 3, 5},
             },
             false,
         },
@@ -780,14 +777,14 @@ CATCH_TEST_CASE("decode_variants", TEST_GROUP) {
                 decoder, vc_sample.seq_id, vc_sample.positions_major, vc_sample.positions_minor,
                 vc_sample.logits, draft, test_case.pass_min_qual, test_case.ambig_ref,
                 test_case.return_all, test_case.normalize, test_case.merge_overlapping,
-                test_case.merge_adjacent));
+                test_case.merge_adjacent, secondary::DEFAULT_GVCF_REFERENCE_BLOCK_GQ_MARGINS));
 
     } else {
         const std::vector<Variant> result = general_decode_variants(
                 decoder, vc_sample.seq_id, vc_sample.positions_major, vc_sample.positions_minor,
                 vc_sample.logits, draft, test_case.pass_min_qual, test_case.ambig_ref,
                 test_case.return_all, test_case.normalize, test_case.merge_overlapping,
-                test_case.merge_adjacent);
+                test_case.merge_adjacent, secondary::DEFAULT_GVCF_REFERENCE_BLOCK_GQ_MARGINS);
 
         CATCH_CHECK(test_case.expected == result);
     }

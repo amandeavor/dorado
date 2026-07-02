@@ -1179,7 +1179,8 @@ void run_variant_calling(const Options& opt,
 
         const std::string out_vcf_inference_fn =
                 (std::empty(opt.output_dir)) ? "-" : (opt.output_dir / "inference.vcf").string();
-        vcf_writer_inference.emplace(out_vcf_inference_fn, vcf_filters, draft_lens, false);
+        vcf_writer_inference.emplace(out_vcf_inference_fn, vcf_filters, draft_lens,
+                                     opt.out_format == VariantCallingFormatEnum::GVCF);
     }
 
     // Compute the minimum usable memory across all devices and use that as the batch size.

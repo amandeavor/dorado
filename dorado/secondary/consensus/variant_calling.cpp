@@ -629,6 +629,36 @@ bool append_ref_base(Variant& var,
     return true;
 }
 
+float get_gvcf_reference_record_gq_margin(
+        const float gq,
+        const std::span<const std::pair<int64_t, float>> margins) {
+    if (std::empty(margins)) {
+        return 0.0f;
+    }
+    const auto it = std::upper_bound(std::cbegin(margins), std::cend(margins), gq,
+                                     [](const float val, const auto& margin) {
+                                         return val < static_cast<float>(margin.first);
+                                     });
+    if (it == std::cbegin(margins)) {
+        return it->second;
+    }
+    return std::prev(it)->second;
+}
+
+void set_gvcf_reference_block_end(Variant& var, const int64_t end) {
+    var.alts = {"<*>"};
+    var.rend = end;
+    var.info["END"] = std::to_string(end);
+
+    auto it_len = std::find_if(std::begin(var.genotype), std::end(var.genotype),
+                               [](const auto& val) { return val.first == "LEN"; });
+    if (it_len == std::end(var.genotype)) {
+        var.genotype.emplace_back("LEN", std::to_string(end - var.pos));
+    } else {
+        it_len->second = std::to_string(end - var.pos);
+    }
+}
+
 }  // namespace
 
 bool variant_ends_before_position(const Variant& var, const int32_t seq_id, const int64_t pos) {
@@ -1024,7 +1054,8 @@ std::vector<Variant> general_decode_variants(
         const bool return_all,
         const bool normalize,
         const bool merge_overlapping,
-        const bool merge_adjacent) {
+        const bool merge_adjacent,
+        const std::span<const std::pair<int64_t, float>> gvcf_reference_block_gq_margins) {
     const int64_t num_columns = std::ssize(positions_major);
 
     // Validate inputs.
@@ -1199,32 +1230,88 @@ std::vector<Variant> general_decode_variants(
         const std::size_t num_existing_variants = std::size(variants);
         std::size_t variant_idx = 0;
 
-        for (int64_t i = 0; i < std::ssize(positions_major); ++i) {
+        const auto find_next_variant = [&](std::size_t idx, const int64_t pos) {
+            while ((idx < num_existing_variants) &&
+                   variant_ends_before_position(variants[idx], seq_id, pos)) {
+                ++idx;
+            }
+            return idx;
+        };
+
+        int64_t i = 0;
+        while (i < std::ssize(positions_major)) {
             // Skip non-reference positions.
             if (positions_minor[i] != 0) {
+                ++i;
                 continue;
             }
 
             const int64_t pos = positions_major[i];
-            const std::string ref(1, draft[pos]);
-
-            while ((variant_idx < num_existing_variants) &&
-                   variant_ends_before_position(variants[variant_idx], seq_id, pos)) {
-                ++variant_idx;
-            }
-
+            variant_idx = find_next_variant(variant_idx, pos);
             if ((variant_idx < num_existing_variants) &&
                 variant_covers_position(variants[variant_idx], seq_id, pos)) {
+                ++i;
                 continue;
             }
 
+            const int64_t block_start_idx = i;
+            const int64_t block_start_pos = pos;
+            int64_t block_end_idx = i + 1;
+            int64_t block_end_pos = pos + 1;
+
+            const float first_gq =
+                    round_float(compute_ref_quality(probs_3D, ref_seq_with_gaps, symbol_lookup,
+                                                    block_start_idx, block_end_idx),
+                                3);
+            const float gq_margin =
+                    get_gvcf_reference_record_gq_margin(first_gq, gvcf_reference_block_gq_margins);
+            float min_gq = first_gq;
+
+            ++i;
+            while (i < std::ssize(positions_major)) {
+                if (positions_minor[i] != 0) {
+                    ++i;
+                    continue;
+                }
+
+                const int64_t current_pos = positions_major[i];
+                variant_idx = find_next_variant(variant_idx, current_pos);
+                if ((current_pos != block_end_pos) ||
+                    ((variant_idx < num_existing_variants) &&
+                     variant_covers_position(variants[variant_idx], seq_id, current_pos))) {
+                    break;
+                }
+
+                const float current_gq = round_float(
+                        compute_ref_quality(probs_3D, ref_seq_with_gaps, symbol_lookup, i, i + 1),
+                        3);
+                if (std::fabs(current_gq - first_gq) > gq_margin) {
+                    break;
+                }
+
+                min_gq = std::min(min_gq, current_gq);
+                block_end_idx = i + 1;
+                block_end_pos = current_pos + 1;
+                ++i;
+            }
+
+            const std::string ref(1, draft[block_start_pos]);
             Variant var{
-                    seq_id, pos, ref, {"."}, ".", {}, 0.0f, {{"GT", "0"}, {"GQ", "0"}}, i, (i + 1),
+                    seq_id,
+                    block_start_pos,
+                    ref,
+                    {"."},
+                    ".",
+                    {},
+                    min_gq,
+                    {{"GT", "0"}, {"GQ", "0"}},
+                    block_start_idx,
+                    block_end_idx,
             };
 
-            var.qual = round_float(compute_ref_quality(probs_3D, ref_seq_with_gaps, symbol_lookup,
-                                                       var.rstart, var.rend),
-                                   3);
+            if (block_end_pos > (block_start_pos + 1)) {
+                set_gvcf_reference_block_end(var, block_end_pos);
+            }
 
             variants.emplace_back(std::move(var));
         }
@@ -1237,6 +1324,10 @@ std::vector<Variant> general_decode_variants(
     normalized_variants.reserve(std::size(variants));
     for (const Variant& var : variants) {
         Variant new_var = normalize_genotype(var, num_haplotypes, pass_min_qual);
+        if (const auto it = new_var.info.find("END");
+            (new_var.filter == ".") && (it != std::cend(new_var.info))) {
+            set_gvcf_reference_block_end(new_var, std::stoll(it->second));
+        }
 
         // Sanity check.
         if (is_valid(new_var)) {
