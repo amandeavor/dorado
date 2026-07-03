@@ -1380,7 +1380,9 @@ std::vector<secondary::Variant> compact_gvcf_reference_records(
         const std::string gq_str = std::to_string(static_cast<int32_t>(std::round(gq)));
         for (auto val = std::rbegin(var.genotype); val != std::rend(var.genotype); ++val) {
             if (val->first == "GQ") {
-                val->second = gq_str;
+                if (val->second != ".") {
+                    val->second = gq_str;
+                }
                 break;
             }
         }

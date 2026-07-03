@@ -208,7 +208,7 @@ CATCH_TEST_CASE("VCFWriter writes valid VCF output and rejects invalid inputs", 
                     .filter = ".",
                     .info = {{"END", "11"}},
                     .qual = 0.0f,
-                    .genotype = {{"GT", "./."}, {"GQ", "0"}, {"LEN", "1"}},
+                    .genotype = {{"GT", "./."}, {"GQ", "."}, {"LEN", "1"}},
                     .rstart = 10,
                     .rend = 11,
             };
@@ -228,7 +228,7 @@ CATCH_TEST_CASE("VCFWriter writes valid VCF output and rejects invalid inputs", 
         CATCH_CHECK_THAT(vcf_text, Catch::Matchers::ContainsSubstring("chr1\t10\t.\tA\tC,<*>"));
         CATCH_CHECK_THAT(vcf_text,
                          Catch::Matchers::ContainsSubstring(
-                                 "chr1\t11\t.\tN\t<*>\t0\t.\tEND=11\tGT:GQ:LEN\t./.:0:1"));
+                                 "chr1\t11\t.\tN\t<*>\t0\t.\tEND=11\tGT:GQ:LEN\t./.:.:1"));
     }
 
     CATCH_SECTION("write_variant rejects filters missing from the header") {

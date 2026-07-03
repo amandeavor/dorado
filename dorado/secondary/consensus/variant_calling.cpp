@@ -665,8 +665,10 @@ Variant normalize_genotype(const Variant& var, const int32_t ploidy, const float
         if (std::empty(ret.alts)) {
             ret.alts = {"."};
         }
-        ret.genotype = {{"GT", make_reference_gt(ploidy, genotype_allele)},
-                        {"GQ", std::to_string(gq)}};
+
+        const std::string gq_str = (genotype_allele == '.') ? "." : std::to_string(gq);
+
+        ret.genotype = {{"GT", make_reference_gt(ploidy, genotype_allele)}, {"GQ", gq_str}};
         ret.filter = ".";
         return ret;
     }
@@ -720,11 +722,14 @@ Variant collapse_to_haploid(const Variant& var, const bool require_hom) {
         if (std::empty(ret.alts)) {
             ret.alts = {"."};
         }
+        const bool is_missing_call =
+                (std::size(ret.ref) == 1) && !utils::is_canonical_base(ret.ref.front());
         ret.filter = ".";
-        for (auto& it_gt : ret.genotype) {
-            if (it_gt.first == "GT") {
-                it_gt.second = "0";
-                break;
+        for (auto& val : ret.genotype) {
+            if (val.first == "GT") {
+                val.second = is_missing_call ? "." : "0";
+            } else if (is_missing_call && (val.first == "GQ")) {
+                val.second = ".";
             }
         }
         return ret;

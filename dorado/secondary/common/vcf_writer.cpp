@@ -170,7 +170,7 @@ void VCFWriter::write_variant(const Variant& variant) {
                 }
             } else {
                 format_keys.emplace_back(key);
-                format_values.emplace_back(std::stoi(value));
+                format_values.emplace_back((value == ".") ? bcf_int32_missing : std::stoi(value));
             }
         }
 
