@@ -15,20 +15,26 @@ namespace dorado::secondary {
 
 namespace {
 
-void ensure_shared_buffer_initialized(bcf1_t& record) {
-    if (record.shared.s != nullptr) {
+void ensure_buffer_initialized(kstring_t& buffer) {
+    if (buffer.s != nullptr) {
         return;
     }
 
-    // Workaround for a Htslib ASAN/UBSAN bug.
-    // Htslib's allele update path computes rlen via pointer arithmetic on shared.s even for a
-    // freshly initialized record. Under ASAN/UBSAN, a null shared buffer trips that path before
-    // any record data has been synced into the shared block. Use Htslib's resize helper so the
-    // buffer is allocated and later freed on the same side of the library boundary.
-    if (hts_resize(char, 1, &record.shared.m, &record.shared.s, HTS_RESIZE_CLEAR) < 0) {
-        throw std::runtime_error("Failed to allocate the BCF shared buffer.");
+    if (hts_resize(char, 1, &buffer.m, &buffer.s, HTS_RESIZE_CLEAR) < 0) {
+        throw std::runtime_error("Failed to allocate a BCF record buffer.");
     }
-    record.shared.l = 0;
+    buffer.l = 0;
+}
+
+void ensure_record_buffers_initialized(bcf1_t& record) {
+    // Workaround for a Htslib ASAN/UBSAN bug.
+    // Htslib's allele update path computes rlen via pointer arithmetic on shared.s and,
+    // for gVCF alleles with a LEN header present, indiv.s. Under ASAN/UBSAN, a null
+    // buffer trips that path before any record data has been synced into the block. Use
+    // Htslib's resize helper so the buffers are allocated and later freed on the same
+    // side of the library boundary.
+    ensure_buffer_initialized(record.shared);
+    ensure_buffer_initialized(record.indiv);
 }
 
 }  // namespace
@@ -101,7 +107,7 @@ void VCFWriter::write_variant(const Variant& variant) {
         throw std::runtime_error("Failed to create VCF record.");
     }
 
-    ensure_shared_buffer_initialized(*record);
+    ensure_record_buffers_initialized(*record);
 
     std::vector<std::string> alts = variant.alts;
 
