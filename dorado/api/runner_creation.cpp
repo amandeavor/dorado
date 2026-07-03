@@ -24,27 +24,7 @@ namespace dorado::api {
 bool check_variable_chunk_sizes_supported(
         [[maybe_unused]] const config::BasecallModelConfig& model_config,
         [[maybe_unused]] const std::span<const int> device_ids) {
-#if DORADO_CUDA_BUILD
-    if (model_config.is_lstm_model()) {
-#if DORADO_ORIN
-        return false;
-#else
-        if ((model_config.lstm_size <= 128) || (model_config.lstm_size > 1024) ||
-            ((model_config.lstm_size % 128) != 0)) {
-            return false;
-        }
-#endif  // DORADO_ORIN
-    } else if (model_config.is_tx_model()) {
-        auto& params = model_config.tx->tx;
-        // TODO: Need a better way to recognise SUP
-        const bool is_sup_model = (params.d_model == 512) && (params.nhead == 8) &&
-                                  (params.attn_window.first == 127) &&
-                                  (params.attn_window.second == 128) &&
-                                  (params.dim_feedforward == 2048);
-        if (!is_sup_model) {
-            return false;
-        }
-    }
+#if DORADO_CUDA_BUILD && !DORADO_ORIN
     if (std::empty(device_ids)) {
         return false;
     }
@@ -55,15 +35,26 @@ bool check_variable_chunk_sizes_supported(
         }
         return (model_config.lstm_size > 128) && (model_config.lstm_size <= 1024) &&
                ((model_config.lstm_size % 128) == 0);
-    }
-    if (model_config.is_flstm_model()) {
+    } else if (model_config.is_flstm_model()) {
         if (std::any_of(std::cbegin(device_ids), std::cend(device_ids),
                         [](const int device_id) { return !nn::koi_can_run_flstm(device_id); })) {
             return false;
         }
         return (model_config.lstm_size == 1024) && (model_config.lstm_inner_dim.value() == 128);
+    } else if (model_config.is_tx_model()) {
+        if (std::any_of(std::cbegin(device_ids), std::cend(device_ids),
+                        [](const int device_id) { return !nn::koi_can_run_tx_vcs(device_id); })) {
+            return false;
+        }
+        auto& params = model_config.tx->tx;
+        // TODO: Need a better way to recognise SUP
+        const bool is_sup_model = (params.d_model == 512) && (params.nhead == 8) &&
+                                  (params.attn_window.first == 127) &&
+                                  (params.attn_window.second == 128) &&
+                                  (params.dim_feedforward == 2048);
+        return is_sup_model;
     }
-    return true;
+    return false;
 #else
     return false;
 #endif
