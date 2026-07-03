@@ -18,12 +18,12 @@ endfunction()
 
 function(get_koi_download_hash KOI_DIR KOI_HASH)
     # List of valid hashes.
-    set(hash__libkoi__0_7_2__Linux__aarch64__cuda__12_6 "903acc74f1b5de5d9eb419457c80fc09acd1a2d79d6329dd80ec0953ea89885f")
-    set(hash__libkoi__0_7_2__Linux__aarch64__cuda__13_0 "5dcfdc7080a7538637cc30f7c40cd89538f875dff1b1190042d339687d043516")
-    set(hash__libkoi__0_7_2__Linux__x86_64__cuda__12_8 "f5e6f48af5a97f7d666650730d8ae42daf2ff53fd9ce16e8e467f94ceec1774f")
-    set(hash__libkoi__0_7_2__Linux__x86_64__cuda__13_0 "d8daa7231b52ad25bedadb1c4e862401e1a910187554d2f2960c838b31a3f73d")
-    set(hash__libkoi__0_7_2__Windows__AMD64__cuda__12_8 "c3eeef97949cc484c541c582fbfc4d0f27ab9bde850fdf8b75e6e64c4cb5b889")
-    set(hash__libkoi__0_7_2__Windows__AMD64__cuda__13_0 "2844d65f4f4120ce7245fa393924fc0d32b9f77c737d3f52cf0006c588aec49b")
+    set(hash__libkoi__0_7_3__Linux__aarch64__cuda__12_6 "9f430531e91f215ca0e8ee280637554aea05f048547c3b23761a7d92af937b08")
+    set(hash__libkoi__0_7_3__Linux__aarch64__cuda__13_0 "e8c30c2a999c8f81c8e8697bf491c85346bb131b8c98750cdc12cfba76f234bc")
+    set(hash__libkoi__0_7_3__Linux__x86_64__cuda__12_8 "3ea5e71b84a7eba85c8365e586bc434b6d3ffe316a7980fa2c7e29e95664b5b8")
+    set(hash__libkoi__0_7_3__Linux__x86_64__cuda__13_0 "a434f2c96cd3ef0c5ce1ca210f699ca237caaa1b27af7a37c9796eff61811906")
+    set(hash__libkoi__0_7_3__Windows__AMD64__cuda__12_8 "35d6a430d6beeef5aecdef25c82829aca554248ef48775c41a39e30288b1db0d")
+    set(hash__libkoi__0_7_3__Windows__AMD64__cuda__13_0 "a61063aa8dc30abf826f79eb467a620dd3c637d87f1a348daeb52f7b81c749ae")
 
     # Do the lookup.
     string(REPLACE "." "_" hash_key ${KOI_DIR})
@@ -37,7 +37,7 @@ endfunction()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR WIN32)
 
-    set(KOI_VERSION 0.7.2)
+    set(KOI_VERSION 0.7.3)
     if(DEFINED KOI_DIR)
         message(STATUS "Building Koi from source: ${KOI_DIR}")
         if(NOT EXISTS ${KOI_DIR})
