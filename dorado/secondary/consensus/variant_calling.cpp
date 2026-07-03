@@ -629,46 +629,7 @@ bool append_ref_base(Variant& var,
     return true;
 }
 
-float get_gvcf_reference_record_gq_margin(
-        const float gq,
-        const std::span<const std::pair<int64_t, float>> margins) {
-    if (std::empty(margins)) {
-        return 0.0f;
-    }
-    const auto it = std::upper_bound(std::cbegin(margins), std::cend(margins), gq,
-                                     [](const float val, const auto& margin) {
-                                         return val < static_cast<float>(margin.first);
-                                     });
-    if (it == std::cbegin(margins)) {
-        return it->second;
-    }
-    return std::prev(it)->second;
-}
-
-void set_gvcf_reference_block_end(Variant& var, const int64_t end) {
-    var.alts = {"<*>"};
-    var.rend = end;
-    var.info["END"] = std::to_string(end);
-
-    auto it_len = std::find_if(std::begin(var.genotype), std::end(var.genotype),
-                               [](const auto& val) { return val.first == "LEN"; });
-    if (it_len == std::end(var.genotype)) {
-        var.genotype.emplace_back("LEN", std::to_string(end - var.pos));
-    } else {
-        it_len->second = std::to_string(end - var.pos);
-    }
-}
-
 }  // namespace
-
-bool variant_ends_before_position(const Variant& var, const int32_t seq_id, const int64_t pos) {
-    return (var.seq_id == seq_id) && ((var.pos + std::max<int64_t>(1, std::ssize(var.ref))) <= pos);
-}
-
-bool variant_covers_position(const Variant& var, const int32_t seq_id, const int64_t pos) {
-    return (var.seq_id == seq_id) && (var.pos <= pos) &&
-           !variant_ends_before_position(var, seq_id, pos);
-}
 
 Variant normalize_genotype(const Variant& var, const int32_t ploidy, const float min_qual) {
     Variant ret = var;
@@ -684,8 +645,7 @@ Variant normalize_genotype(const Variant& var, const int32_t ploidy, const float
     const int32_t gq = static_cast<int32_t>(std::round(var.qual));
 
     // This is a gVCF record.
-    if (std::empty(var.alts) || (var.filter == ".") ||
-        (var.alts == std::vector<std::string>{"."})) {
+    if (is_reference_record(var)) {
         std::ostringstream oss_gt;
         for (int32_t i = 0; i < ploidy; ++i) {
             if (i > 0) {
@@ -694,7 +654,9 @@ Variant normalize_genotype(const Variant& var, const int32_t ploidy, const float
             oss_gt << '0';
         }
 
-        ret.alts = {"."};
+        if (std::empty(ret.alts)) {
+            ret.alts = {"."};
+        }
         ret.genotype = {{"GT", std::move(oss_gt).str()}, {"GQ", std::to_string(gq)}};
         ret.filter = ".";
         return ret;
@@ -745,8 +707,10 @@ Variant collapse_to_haploid(const Variant& var, const bool require_hom) {
     Variant ret = var;
 
     // This is a gVCF record.
-    if ((var.filter == ".") || (var.alts == std::vector<std::string>{"."})) {
-        ret.alts = {"."};
+    if (is_reference_record(var)) {
+        if (std::empty(ret.alts)) {
+            ret.alts = {"."};
+        }
         ret.filter = ".";
         for (auto& it_gt : ret.genotype) {
             if (it_gt.first == "GT") {
@@ -757,7 +721,10 @@ Variant collapse_to_haploid(const Variant& var, const bool require_hom) {
         return ret;
     }
 
-    if (std::ssize(var.alts) > 1) {
+    const int64_t num_called_alts =
+            std::count_if(std::cbegin(var.alts), std::cend(var.alts),
+                          [](const std::string& alt) { return alt != "<*>"; });
+    if (num_called_alts > 1) {
         spdlog::debug("Discarding variant with more than one alt in haploid region ({}, {}).",
                       var.seq_id, var.pos);
         ret.alts.clear();
@@ -1309,9 +1276,7 @@ std::vector<Variant> general_decode_variants(
                     block_end_idx,
             };
 
-            if (block_end_pos > (block_start_pos + 1)) {
-                set_gvcf_reference_block_end(var, block_end_pos);
-            }
+            set_gvcf_reference_block_end(var, block_end_pos);
 
             variants.emplace_back(std::move(var));
         }

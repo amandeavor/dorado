@@ -77,6 +77,23 @@ at::Tensor make_polyploid_probs(const std::string_view symbols,
 }  // namespace
 
 namespace dorado::secondary::tests {
+
+CATCH_TEST_CASE("variant_span_helpers", TEST_GROUP) {
+    const Variant end_record{0,  10, "A", {"<*>"}, ".", {{"END", "15"}}, 0.0f, {{"LEN", "99"}},
+                             10, 15};
+    const Variant len_record{0, 20, "C", {"<*>"}, ".", {}, 0.0f, {{"LEN", "4"}}, 20, 24};
+    const Variant ordinary_record{0, 30, "ACG", {"T"}, "PASS", {}, 0.0f, {}, 30, 33};
+
+    CATCH_CHECK(variant_end(end_record) == 15);
+    CATCH_CHECK(variant_end(len_record) == 24);
+    CATCH_CHECK(variant_end(ordinary_record) == 33);
+    CATCH_CHECK(variant_ends_before_position(len_record, 0, 24));
+    CATCH_CHECK(!variant_ends_before_position(len_record, 0, 23));
+    CATCH_CHECK(variant_covers_position(len_record, 0, 23));
+    CATCH_CHECK(!variant_covers_position(len_record, 0, 24));
+    CATCH_CHECK(!variant_covers_position(len_record, 1, 23));
+}
+
 CATCH_TEST_CASE("decode_variants", TEST_GROUP) {
     struct TestCase {
         std::string test_name;

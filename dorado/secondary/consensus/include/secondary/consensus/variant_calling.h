@@ -25,16 +25,6 @@ constexpr std::array<std::pair<int64_t, float>, 2> DEFAULT_GVCF_REFERENCE_BLOCK_
         {{0, 0.5f}, {10, 5.0f}}};
 
 /**
- * \brief Utility function to check if a variant ends before a given position on a reference.
- */
-bool variant_ends_before_position(const Variant& var, int32_t seq_id, int64_t pos);
-
-/**
- * \brief Utility function to check if a variant overlaps a given position on a reference.
- */
-bool variant_covers_position(const Variant& var, int32_t seq_id, int64_t pos);
-
-/**
  * \brief Utility function to normalize the genotype information of a variant.
  *          For a given variant, it deduplicates and enumerates alt alleles, creates the
  *          GT and GQ tags and sets the filter tag.

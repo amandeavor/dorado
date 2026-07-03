@@ -1318,20 +1318,6 @@ std::vector<secondary::Interval64> merge_intervals(
     return merged;
 }
 
-void set_gvcf_reference_block_end(secondary::Variant& var, const int64_t end) {
-    var.alts = {"<*>"};
-    var.rend = end;
-    var.info["END"] = std::to_string(end);
-
-    auto it_len = std::find_if(std::begin(var.genotype), std::end(var.genotype),
-                               [](const auto& val) { return val.first == "LEN"; });
-    if (it_len == std::end(var.genotype)) {
-        var.genotype.emplace_back("LEN", std::to_string(end - var.pos));
-    } else {
-        it_len->second = std::to_string(end - var.pos);
-    }
-}
-
 secondary::Variant make_gvcf_reference_record(const int32_t seq_id,
                                               const int64_t pos,
                                               const char ref_base,
@@ -1353,7 +1339,7 @@ secondary::Variant make_gvcf_reference_record(const int32_t seq_id,
     secondary::Variant ret =
             secondary::normalize_genotype(ref_var, ploidy, secondary::VCF_MAX_GQ_CAP);
 
-    set_gvcf_reference_block_end(ret, end);
+    secondary::set_gvcf_reference_block_end(ret, end);
 
     return ret;
 }
@@ -1363,21 +1349,6 @@ void compact_gvcf_reference_records(std::vector<secondary::Variant>& variants,
     const auto is_single_base_gvcf_reference_record = [](const secondary::Variant& var) {
         return (var.filter == ".") && (std::size(var.alts) == 1) && (var.alts.front() == ".") &&
                std::empty(var.info) && (std::size(var.ref) == 1);
-    };
-
-    const auto get_record_gq_margin = [](const float gq,
-                                         const std::span<const std::pair<int64_t, float>> margins) {
-        if (std::empty(margins)) {
-            return 0.0f;
-        }
-        const auto it = std::upper_bound(std::cbegin(margins), std::cend(margins), gq,
-                                         [](const float val, const auto& margin) {
-                                             return val < static_cast<float>(margin.first);
-                                         });
-        if (it == std::cbegin(margins)) {
-            return it->second;
-        }
-        return std::prev(it)->second;
     };
 
     const auto is_same_genotype = [](const secondary::Variant& lhs, const secondary::Variant& rhs) {
@@ -1424,7 +1395,8 @@ void compact_gvcf_reference_records(std::vector<secondary::Variant>& variants,
         }
 
         const float first_gq = variants[i].qual;
-        const float gq_margin = get_record_gq_margin(first_gq, gq_margins);
+        const float gq_margin =
+                secondary::get_gvcf_reference_record_gq_margin(first_gq, gq_margins);
         float min_gq = first_gq;
 
         std::size_t j = i + 1;
@@ -1441,7 +1413,7 @@ void compact_gvcf_reference_records(std::vector<secondary::Variant>& variants,
         }
 
         secondary::Variant block = std::move(variants[i]);
-        set_gvcf_reference_block_end(block, variants[j - 1].pos + 1);
+        secondary::set_gvcf_reference_block_end(block, variants[j - 1].pos + 1);
         set_gq(block, min_gq);
         compacted.emplace_back(std::move(block));
         i = j;
@@ -1456,24 +1428,6 @@ void add_gvcf_reference_records_for_unprocessed_regions(
         const std::string& draft,
         const std::vector<secondary::RegionInt>& selected_regions,
         const int32_t ploidy) {
-    const auto variant_end = [](const secondary::Variant& var) -> int64_t {
-        if (const auto it = var.info.find("END"); it != std::cend(var.info)) {
-            return static_cast<int64_t>(std::stoll(it->second));
-        }
-        return var.pos + std::max<int64_t>(1, std::ssize(var.ref));
-    };
-    const auto variant_ends_before_position = [&variant_end](const secondary::Variant& var,
-                                                             const int32_t var_seq_id,
-                                                             const int64_t pos) {
-        return (var.seq_id == var_seq_id) && (variant_end(var) <= pos);
-    };
-    const auto variant_covers_position = [&variant_ends_before_position](
-                                                 const secondary::Variant& var,
-                                                 const int32_t var_seq_id, const int64_t pos) {
-        return (var.seq_id == var_seq_id) && (var.pos <= pos) &&
-               !variant_ends_before_position(var, var_seq_id, pos);
-    };
-
     const int64_t seq_len = std::ssize(draft);
     const std::vector<secondary::Interval64> selected = merge_intervals(selected_regions, seq_len);
     const std::size_t num_existing_variants = std::size(variants);
@@ -1486,13 +1440,15 @@ void add_gvcf_reference_records_for_unprocessed_regions(
                    (!secondary::is_valid(variants[variant_idx]) ||
                     (variants[variant_idx].seq_id < seq_id) ||
                     ((variants[variant_idx].seq_id == seq_id) &&
-                     variant_ends_before_position(variants[variant_idx], seq_id, pos)))) {
+                     secondary::variant_ends_before_position(variants[variant_idx], seq_id,
+                                                             pos)))) {
                 ++variant_idx;
             }
 
             if ((variant_idx < num_existing_variants) &&
-                variant_covers_position(variants[variant_idx], seq_id, pos)) {
-                pos = std::min<int64_t>(selected_interval.end, variant_end(variants[variant_idx]));
+                secondary::variant_covers_position(variants[variant_idx], seq_id, pos)) {
+                pos = std::min<int64_t>(selected_interval.end,
+                                        secondary::variant_end(variants[variant_idx]));
                 continue;
             }
 
