@@ -130,7 +130,11 @@ void VCFWriter::write_variant(const Variant& variant) {
     record->pos = variant.pos;
     bcf_update_id(m_header.get(), record.get(), ".");
     bcf_update_alleles_str(m_header.get(), record.get(), os_alleles.str().c_str());
-    record->qual = variant.qual;
+    if (variant.qual < 0.0f) {
+        bcf_float_set_missing(record->qual);
+    } else {
+        record->qual = variant.qual;
+    }
 
     // Look up the FILTER ID in the header
     if (!std::empty(variant.filter) && (variant.filter != ".")) {

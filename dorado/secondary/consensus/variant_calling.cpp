@@ -658,9 +658,9 @@ Variant normalize_genotype(const Variant& var, const int32_t ploidy, const float
 
     // This is a gVCF record.
     if (is_reference_record(var)) {
-        const char genotype_allele =
-                ((std::size(var.ref) == 1) && !utils::is_canonical_base(var.ref.front())) ? '.'
-                                                                                          : '0';
+        const bool is_missing_call =
+                (std::size(var.ref) == 1) && !utils::is_canonical_base(var.ref.front());
+        const char genotype_allele = is_missing_call ? '.' : '0';
 
         if (std::empty(ret.alts)) {
             ret.alts = {"."};
@@ -668,6 +668,9 @@ Variant normalize_genotype(const Variant& var, const int32_t ploidy, const float
 
         const std::string gq_str = (genotype_allele == '.') ? "." : std::to_string(gq);
 
+        if (is_missing_call) {
+            ret.qual = -1.0f;
+        }
         ret.genotype = {{"GT", make_reference_gt(ploidy, genotype_allele)}, {"GQ", gq_str}};
         ret.filter = ".";
         return ret;
@@ -725,6 +728,9 @@ Variant collapse_to_haploid(const Variant& var, const bool require_hom) {
         const bool is_missing_call =
                 (std::size(ret.ref) == 1) && !utils::is_canonical_base(ret.ref.front());
         ret.filter = ".";
+        if (is_missing_call) {
+            ret.qual = -1.0f;
+        }
         for (auto& val : ret.genotype) {
             if (val.first == "GT") {
                 val.second = is_missing_call ? "." : "0";
