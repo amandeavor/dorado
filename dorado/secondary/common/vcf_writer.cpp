@@ -6,6 +6,8 @@
 #include <htslib/vcf.h>
 
 #include <algorithm>
+#include <cstdint>
+#include <cstring>
 #include <sstream>
 #include <stdexcept>
 #include <string_view>
@@ -34,6 +36,19 @@ void ensure_record_buffers_initialized(bcf1_t& record) {
     // side of the library boundary.
     ensure_buffer_initialized(record.shared);
     ensure_buffer_initialized(record.indiv);
+}
+
+float missing_bcf_float() {
+    static_assert(sizeof(float) == sizeof(std::uint32_t));
+
+    // Same bit pattern as htslib's bcf_float_missing, without referencing the
+    // exported data symbol that is not available in all Windows builds.
+    //
+    // It looks strange - but it matches the original implementation in vcf.c/.h.
+    constexpr std::uint32_t missing_value = 0x7F800001;
+    float value = 0.0f;
+    std::memcpy(&value, &missing_value, sizeof(value));
+    return value;
 }
 
 }  // namespace
@@ -131,7 +146,7 @@ void VCFWriter::write_variant(const Variant& variant) {
     bcf_update_id(m_header.get(), record.get(), ".");
     bcf_update_alleles_str(m_header.get(), record.get(), os_alleles.str().c_str());
     if (variant.qual < 0.0f) {
-        bcf_float_set_missing(record->qual);
+        record->qual = missing_bcf_float();
     } else {
         record->qual = variant.qual;
     }
