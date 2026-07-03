@@ -149,7 +149,7 @@ void BasecallerNode::input_thread_fn() {
             read_chunks.reserve(std::size(offsets));
             for (std::size_t i = 0; i < std::size(offsets); ++i) {
                 read_chunks.emplace_back(std::make_unique<BasecallingChunk>(
-                        working_read, offsets[i], i, chunk_size, 1));
+                        working_read, offsets[i], i, chunk_size, chunk_size));
             }
         }
 
