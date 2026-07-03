@@ -1,7 +1,6 @@
 #include "secondary/common/vcf_writer.h"
 
 #include "dorado_version.h"
-#include "utils/container_utils.h"
 
 #include <htslib/hts.h>
 #include <htslib/vcf.h>
@@ -134,7 +133,7 @@ void VCFWriter::write_variant(const Variant& variant) {
     record->qual = variant.qual;
 
     // Look up the FILTER ID in the header
-    if (!std::empty(variant.filter)) {
+    if (!std::empty(variant.filter) && (variant.filter != ".")) {
         int32_t filter_id = bcf_hdr_id2int(m_header.get(), BCF_DT_ID, variant.filter.c_str());
         if (filter_id < 0) {
             throw std::runtime_error("VCF filter ID '" + variant.filter + "' not found in header.");
@@ -160,12 +159,13 @@ void VCFWriter::write_variant(const Variant& variant) {
 
         for (const auto& [key, value] : variant.genotype) {
             if (key == "GT") {
-                const std::vector<int32_t> values = utils::parse_int32_vector(value, '/');
-                for (const int32_t val : values) {
-                    if (val < 0) {
-                        genotype_values.emplace_back(bcf_int32_missing);
+                std::istringstream ss(value);
+                std::string token;
+                while (std::getline(ss, token, '/')) {
+                    if (token == ".") {
+                        genotype_values.emplace_back(bcf_gt_missing);
                     } else {
-                        genotype_values.emplace_back(bcf_gt_unphased(val));
+                        genotype_values.emplace_back(bcf_gt_unphased(std::stoi(token)));
                     }
                 }
             } else {

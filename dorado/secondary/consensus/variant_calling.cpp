@@ -4,6 +4,7 @@
 #include "secondary/consensus/consensus_utils.h"
 #include "torch_utils/tensor_utils.h"
 #include "utils/rle.h"
+#include "utils/sequence_utils.h"
 
 #include <ATen/ATen.h>
 #include <cxxpool.h>
@@ -49,6 +50,17 @@ bool is_subset_of_symbols(const std::unordered_set<char>& symbol_map,
         }
     }
     return true;
+}
+
+std::string make_reference_gt(const int32_t ploidy, const char allele) {
+    std::ostringstream oss_gt;
+    for (int32_t i = 0; i < ploidy; ++i) {
+        if (i > 0) {
+            oss_gt << '/';
+        }
+        oss_gt << allele;
+    }
+    return oss_gt.str();
 }
 
 /**
@@ -646,18 +658,15 @@ Variant normalize_genotype(const Variant& var, const int32_t ploidy, const float
 
     // This is a gVCF record.
     if (is_reference_record(var)) {
-        std::ostringstream oss_gt;
-        for (int32_t i = 0; i < ploidy; ++i) {
-            if (i > 0) {
-                oss_gt << '/';
-            }
-            oss_gt << '0';
-        }
+        const char genotype_allele =
+                ((std::size(var.ref) == 1) && !utils::is_canonical_base(var.ref.front())) ? '.'
+                                                                                          : '0';
 
         if (std::empty(ret.alts)) {
             ret.alts = {"."};
         }
-        ret.genotype = {{"GT", std::move(oss_gt).str()}, {"GQ", std::to_string(gq)}};
+        ret.genotype = {{"GT", make_reference_gt(ploidy, genotype_allele)},
+                        {"GQ", std::to_string(gq)}};
         ret.filter = ".";
         return ret;
     }
@@ -1205,6 +1214,15 @@ std::vector<Variant> general_decode_variants(
             return idx;
         };
 
+        const auto get_reference_gq = [&](const bool is_callable, const int64_t start,
+                                          const int64_t end) {
+            if (!is_callable) {
+                return 0.0f;
+            }
+            return round_float(
+                    compute_ref_quality(probs_3D, ref_seq_with_gaps, symbol_lookup, start, end), 3);
+        };
+
         int64_t i = 0;
         while (i < std::ssize(positions_major)) {
             // Skip non-reference positions.
@@ -1225,11 +1243,10 @@ std::vector<Variant> general_decode_variants(
             const int64_t block_start_pos = pos;
             int64_t block_end_idx = i + 1;
             int64_t block_end_pos = pos + 1;
+            const bool is_callable_block = utils::is_canonical_base(draft[block_start_pos]);
 
             const float first_gq =
-                    round_float(compute_ref_quality(probs_3D, ref_seq_with_gaps, symbol_lookup,
-                                                    block_start_idx, block_end_idx),
-                                3);
+                    get_reference_gq(is_callable_block, block_start_idx, block_end_idx);
             const float gq_margin =
                     get_gvcf_reference_record_gq_margin(first_gq, gvcf_reference_block_gq_margins);
             float min_gq = first_gq;
@@ -1249,9 +1266,10 @@ std::vector<Variant> general_decode_variants(
                     break;
                 }
 
-                const float current_gq = round_float(
-                        compute_ref_quality(probs_3D, ref_seq_with_gaps, symbol_lookup, i, i + 1),
-                        3);
+                if (utils::is_canonical_base(draft[current_pos]) != is_callable_block) {
+                    break;
+                }
+                const float current_gq = get_reference_gq(is_callable_block, i, i + 1);
                 if (std::fabs(current_gq - first_gq) > gq_margin) {
                     break;
                 }

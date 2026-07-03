@@ -11,6 +11,7 @@
 #include "torch_utils/tensor_utils.h"
 #include "utils/container_utils.h"
 #include "utils/memory_utils.h"
+#include "utils/sequence_utils.h"
 #include "utils/string_utils.h"
 #include "utils/timer_high_res.h"
 
@@ -1323,6 +1324,7 @@ secondary::Variant make_gvcf_reference_record(const int32_t seq_id,
                                               const char ref_base,
                                               const int64_t end,
                                               const int32_t ploidy) {
+    const float qual = utils::is_canonical_base(ref_base) ? secondary::VCF_MAX_GQ_CAP : 0.0f;
     const secondary::Variant ref_var{
             .seq_id = seq_id,
             .pos = pos,
@@ -1330,7 +1332,7 @@ secondary::Variant make_gvcf_reference_record(const int32_t seq_id,
             .alts = {"."},
             .filter = ".",
             .info = {},
-            .qual = secondary::VCF_MAX_GQ_CAP,
+            .qual = qual,
             .genotype = {},
             .rstart = pos,
             .rend = end,
@@ -1454,9 +1456,18 @@ void add_gvcf_reference_records_for_unprocessed_regions(
             }
 
             const int64_t block_start = pos;
+            const bool is_callable_block =
+                    utils::is_canonical_base(draft[static_cast<std::size_t>(block_start)]);
             pos = selected_interval.end;
             if ((variant_idx < num_existing_variants) && (variants[variant_idx].seq_id == seq_id)) {
                 pos = std::min(pos, variants[variant_idx].pos);
+            }
+            for (int64_t candidate_pos = block_start + 1; candidate_pos < pos; ++candidate_pos) {
+                if (utils::is_canonical_base(draft[static_cast<std::size_t>(candidate_pos)]) !=
+                    is_callable_block) {
+                    pos = candidate_pos;
+                    break;
+                }
             }
 
             variants.emplace_back(make_gvcf_reference_record(

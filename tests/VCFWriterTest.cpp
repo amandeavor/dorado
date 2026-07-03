@@ -199,6 +199,20 @@ CATCH_TEST_CASE("VCFWriter writes valid VCF output and rejects invalid inputs", 
         {
             VCFWriter writer(data.vcf_path, data.filters, data.contigs, true);
             writer.write_variant(data.first_variant);
+
+            Variant no_call_variant{
+                    .seq_id = 0,
+                    .pos = 10,
+                    .ref = "N",
+                    .alts = {"<*>"},
+                    .filter = ".",
+                    .info = {{"END", "11"}},
+                    .qual = 0.0f,
+                    .genotype = {{"GT", "./."}, {"GQ", "0"}, {"LEN", "1"}},
+                    .rstart = 10,
+                    .rend = 11,
+            };
+            writer.write_variant(no_call_variant);
         }
 
         const std::string vcf_text = ReadFileIntoString(data.vcf_path);
@@ -212,6 +226,9 @@ CATCH_TEST_CASE("VCFWriter writes valid VCF output and rejects invalid inputs", 
                         "##FORMAT=<ID=LEN,Number=1,Type=Integer,Description=\"Length of <*> "
                         "reference block\">"));
         CATCH_CHECK_THAT(vcf_text, Catch::Matchers::ContainsSubstring("chr1\t10\t.\tA\tC,<*>"));
+        CATCH_CHECK_THAT(vcf_text,
+                         Catch::Matchers::ContainsSubstring(
+                                 "chr1\t11\t.\tN\t<*>\t0\t.\tEND=11\tGT:GQ:LEN\t./.:0:1"));
     }
 
     CATCH_SECTION("write_variant rejects filters missing from the header") {
