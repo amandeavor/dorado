@@ -1441,10 +1441,8 @@ void compact_gvcf_reference_records(std::vector<secondary::Variant>& variants,
         }
 
         secondary::Variant block = std::move(variants[i]);
-        if (j > (i + 1)) {
-            set_gvcf_reference_block_end(block, variants[j - 1].pos + 1);
-            set_gq(block, min_gq);
-        }
+        set_gvcf_reference_block_end(block, variants[j - 1].pos + 1);
+        set_gq(block, min_gq);
         compacted.emplace_back(std::move(block));
         i = j;
     }

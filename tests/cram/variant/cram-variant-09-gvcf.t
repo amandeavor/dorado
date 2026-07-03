@@ -48,6 +48,8 @@ chr20	1959	1
   > head -n 5 out/gvcf.body.no_qual.vcf | sed -E 's/\t/ /g'
   > ### Check the non-variant reference call from an inferred window (GQ is computed)
   > awk '$2 == 1615' out/gvcf.body.no_qual.vcf | sed -E 's/\t/ /g'
+  > ### Check that all reference records use the <*> block form
+  > awk '$5 == "."' out/gvcf.body.no_qual.vcf
   > ### Check a variant call
   > awk '$2 == 1472' out/gvcf.body.no_qual.vcf | sed -E 's/\t/ /g'
   > ### Check that a variant position does not also emit a reference record
@@ -65,7 +67,7 @@ chr20	1959	1
   chr20 1472 . T G,<*> PASS . GT:GQ 0/1:42
   chr20 1473 . C <*> . END=1555 GT:GQ:LEN 0/0:60:83
   chr20 1556 . C <*> . END=1557 GT:GQ:LEN 0/0:50:2
-  chr20 1615 . C . . . GT:GQ 0/0:54
+  chr20 1615 . C <*> . END=1615 GT:GQ:LEN 0/0:54:1
   chr20 1472 . T G,<*> PASS . GT:GQ 0/1:42
   chr20 1959 . T G,<*> PASS . GT:GQ 0/1:44
 
