@@ -1344,8 +1344,9 @@ secondary::Variant make_gvcf_reference_record(const int32_t seq_id,
     return ret;
 }
 
-void compact_gvcf_reference_records(std::vector<secondary::Variant>& variants,
-                                    const std::span<const std::pair<int64_t, float>> gq_margins) {
+std::vector<secondary::Variant> compact_gvcf_reference_records(
+        const std::vector<secondary::Variant>& variants,
+        const std::span<const std::pair<int64_t, float>> gq_margins) {
     const auto is_single_base_gvcf_reference_record = [](const secondary::Variant& var) {
         return (var.filter == ".") && (std::size(var.alts) == 1) && (var.alts.front() == ".") &&
                std::empty(var.info) && (std::size(var.ref) == 1);
@@ -1389,7 +1390,7 @@ void compact_gvcf_reference_records(std::vector<secondary::Variant>& variants,
     std::size_t i = 0;
     while (i < std::size(variants)) {
         if (!is_single_base_gvcf_reference_record(variants[i])) {
-            compacted.emplace_back(std::move(variants[i]));
+            compacted.emplace_back(variants[i]);
             ++i;
             continue;
         }
@@ -1412,14 +1413,14 @@ void compact_gvcf_reference_records(std::vector<secondary::Variant>& variants,
             ++j;
         }
 
-        secondary::Variant block = std::move(variants[i]);
+        secondary::Variant block = variants[i];
         secondary::set_gvcf_reference_block_end(block, variants[j - 1].pos + 1);
         set_gq(block, min_gq);
         compacted.emplace_back(std::move(block));
         i = j;
     }
 
-    variants = std::move(compacted);
+    return compacted;
 }
 
 void add_gvcf_reference_records_for_unprocessed_regions(
@@ -1675,8 +1676,9 @@ void worker_variant_calling_reduce(
                                                                ploidy);
             std::stable_sort(std::begin(reduce_data.variants_merged),
                              std::end(reduce_data.variants_merged));
-            compact_gvcf_reference_records(reduce_data.variants_merged,
-                                           secondary::DEFAULT_GVCF_REFERENCE_BLOCK_GQ_MARGINS);
+            reduce_data.variants_merged = compact_gvcf_reference_records(
+                    reduce_data.variants_merged,
+                    secondary::DEFAULT_GVCF_REFERENCE_BLOCK_GQ_MARGINS);
         }
 
         if (!std::empty(hemizygous_regions)) {
