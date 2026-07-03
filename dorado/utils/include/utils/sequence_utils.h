@@ -66,6 +66,19 @@ public:
         base_ids['T'] = 3;
         return base_ids;
     }();
+    inline static constexpr auto BASE_IDS_WITH_LOWER = [] {
+        std::array<std::int8_t, 256> base_ids;
+        base_ids.fill(-1);
+        base_ids['A'] = 0;
+        base_ids['C'] = 1;
+        base_ids['G'] = 2;
+        base_ids['T'] = 3;
+        base_ids['a'] = 0;
+        base_ids['c'] = 1;
+        base_ids['g'] = 2;
+        base_ids['t'] = 3;
+        return base_ids;
+    }();
 };
 
 size_t count_trailing_chars(const std::string_view seq, char c);
@@ -141,5 +154,9 @@ inline static constexpr auto complement_table = [] {
     a['g'] = 'c';
     return a;
 }();
+
+inline bool is_canonical_base(const char base) {
+    return (utils::BaseInfo::BASE_IDS_WITH_LOWER[static_cast<uint32_t>(base)] >= 0);
+}
 
 }  // namespace dorado::utils
