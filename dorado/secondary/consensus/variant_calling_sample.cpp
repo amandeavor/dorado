@@ -53,7 +53,9 @@ int64_t VariantCallingSample::end() const {
     return (std::empty(positions_major) ? -1 : (positions_major.back() + 1));
 }
 
-std::ostream& operator<<(std::ostream& os, const VariantCallingSample& vc_sample) {
+void debug_print(std::ostream& os,
+                 const secondary::VariantCallingSample& vc_sample,
+                 const bool detailed) {
     // Make sure that vectors are of the same length.
     vc_sample.validate();
 
@@ -64,21 +66,40 @@ std::ostream& operator<<(std::ostream& os, const VariantCallingSample& vc_sample
 
     // Print first the beginning and end of the positions vectors.
     constexpr int64_t START = 0;
+    constexpr int64_t MARGIN = 3;
     const int64_t len = std::ssize(vc_sample.positions_major);
-    for (int64_t k = START; k < std::min<int64_t>(START + 3, len); ++k) {
+    for (int64_t k = START; k < std::min<int64_t>(START + MARGIN, len); ++k) {
         os << "(" << vc_sample.positions_major[k] << ", " << vc_sample.positions_minor[k] << ") ";
         os.flush();
     }
     os << " ...";
     os.flush();
     const int64_t end = len;
-    for (int64_t k = std::max<int64_t>(START + 3, end - 3); k < end; ++k) {
+    for (int64_t k = std::max<int64_t>(START + MARGIN, end - MARGIN); k < end; ++k) {
         os << " (" << vc_sample.positions_major[k] << ", " << vc_sample.positions_minor[k] << ")";
         os.flush();
     }
     os << "], size = " << std::size(vc_sample.positions_major);
     os.flush();
 
+    if (detailed) {
+        os << '\n';
+        for (int64_t k = 0; k < len; ++k) {
+            os << "[k = " << k << "] major = " << vc_sample.positions_major[k]
+               << ", minor = " << vc_sample.positions_minor[k] << '\n';
+        }
+        os.flush();
+    }
+}
+
+std::string to_string(const secondary::VariantCallingSample& vc_sample, const bool detailed) {
+    std::ostringstream oss;
+    secondary::debug_print(oss, vc_sample, detailed);
+    return std::move(oss).str();
+}
+
+std::ostream& operator<<(std::ostream& os, const VariantCallingSample& vc_sample) {
+    debug_print(os, vc_sample, false);
     return os;
 }
 

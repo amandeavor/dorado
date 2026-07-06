@@ -28,6 +28,10 @@ struct VariantCallingSample {
     int64_t end() const;
 };
 
+void debug_print(std::ostream& os, const secondary::VariantCallingSample& vc_sample, bool detailed);
+
+std::string to_string(const secondary::VariantCallingSample& vc_sample, bool detailed);
+
 std::ostream& operator<<(std::ostream& os, const VariantCallingSample& vc_sample);
 
 bool operator==(const VariantCallingSample& lhs, const VariantCallingSample& rhs);
