@@ -65,7 +65,7 @@ void AuxiliaryData::restore_convolution_auxiliary_data() {
     if (!device_chunk_intervals.defined()) {
         throw std::runtime_error("AuxiliaryData error: undefined chunk intervals!");
     }
-    device_chunk_intervals.mul_(stride_);
+    device_chunk_intervals.mul_(stride_in_);
 #else
     throw std::runtime_error("AuxiliaryData error: unsupported code path!");
 #endif
