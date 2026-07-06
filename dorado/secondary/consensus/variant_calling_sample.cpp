@@ -161,6 +161,43 @@ VariantCallingSample slice_vc_sample(const VariantCallingSample& vc_sample,
             vc_sample.logits.index({at::indexing::Slice(idx_start, idx_end)}).clone()};
 }
 
+VariantCallingSample slice_vc_sample_in_ref_coords(const VariantCallingSample& vc_sample,
+                                                   const int64_t ref_start,
+                                                   const int64_t ref_end) {
+    // Check that all members of the sample are of the same length.
+    vc_sample.validate();
+
+    if (std::empty(vc_sample.positions_major)) {
+        return vc_sample;
+    }
+
+    // Nothing to do.
+    if ((ref_start == vc_sample.start()) && (ref_end == vc_sample.end())) {
+        return vc_sample;
+    }
+
+    // Validate reference coords.
+    if ((ref_start < 0) || (ref_end < 0) || (ref_start >= ref_end) ||
+        (ref_start >= vc_sample.end()) || (ref_end > vc_sample.end())) {
+        throw std::out_of_range(
+                "Reference coordinates are out of range in slice_vc_sample_in_ref_coords. "
+                "ref_start = " +
+                std::to_string(ref_start) + ", ref_end = " + std::to_string(ref_end) +
+                ", vc_sample.start() = " + std::to_string(vc_sample.start()) +
+                ", vc_sample.end() = " + std::to_string(vc_sample.end()));
+    }
+
+    // Find where the reference coordinates actually begin in the sample.
+    const auto start_iter = std::lower_bound(std::begin(vc_sample.positions_major),
+                                             std::end(vc_sample.positions_major), ref_start);
+    const auto end_iter = std::lower_bound(std::begin(vc_sample.positions_major),
+                                           std::end(vc_sample.positions_major), ref_end);
+    const int64_t start_idx = std::distance(std::begin(vc_sample.positions_major), start_iter);
+    const int64_t end_idx = std::distance(std::begin(vc_sample.positions_major), end_iter);
+
+    return slice_vc_sample(vc_sample, start_idx, end_idx);
+}
+
 std::vector<VariantCallingSample> merge_vc_samples(
         const std::vector<VariantCallingSample>& vc_samples) {
     const auto merge_adjacent_samples_in_place = [](VariantCallingSample& lh,
