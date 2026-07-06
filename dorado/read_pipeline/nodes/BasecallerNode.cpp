@@ -29,6 +29,13 @@ using namespace at::indexing;
 namespace dorado {
 
 struct BasecallerNode::BasecallingChunk : utils::Chunk {
+    // Non-VCS granularity is chunk_size
+    BasecallingChunk(std::shared_ptr<BasecallingRead> owner,
+                     size_t offset,
+                     size_t chunk_in_read_idx,
+                     size_t chunk_size)
+            : BasecallingChunk(owner, offset, chunk_in_read_idx, chunk_size, chunk_size) {}
+
     BasecallingChunk(std::shared_ptr<BasecallingRead> owner,
                      size_t offset,
                      size_t chunk_in_read_idx,
@@ -149,7 +156,7 @@ void BasecallerNode::input_thread_fn() {
             read_chunks.reserve(std::size(offsets));
             for (std::size_t i = 0; i < std::size(offsets); ++i) {
                 read_chunks.emplace_back(std::make_unique<BasecallingChunk>(
-                        working_read, offsets[i], i, chunk_size, chunk_size));
+                        working_read, offsets[i], i, chunk_size));
             }
         }
 

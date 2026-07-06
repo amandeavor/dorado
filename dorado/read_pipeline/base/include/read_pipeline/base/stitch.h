@@ -13,6 +13,9 @@ namespace dorado::utils {
 
 // A single chunk
 struct Chunk {
+    // Non-VCS granularity is chunk_size
+    Chunk(size_t offset, size_t chunk_size) : Chunk(offset, chunk_size, chunk_size) {}
+
     Chunk(size_t offset, size_t chunk_size, size_t chunk_granularity)
             : input_offset(offset),
               raw_chunk_size(chunk_size),

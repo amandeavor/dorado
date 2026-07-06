@@ -36,7 +36,7 @@ bool koi_can_run_flstm(const int device_id) {
     return koi_can_run_flstm_internal(at::cuda::getDeviceProperties(device_id));
 }
 bool koi_can_run_tx_vcs(const int device_id) {
-    cudaDeviceProp *prop = at::cuda::getCurrentDeviceProperties();
+    cudaDeviceProp *prop = at::cuda::getDeviceProperties(device_id);
     return (prop->major >= 8);
 }
 
