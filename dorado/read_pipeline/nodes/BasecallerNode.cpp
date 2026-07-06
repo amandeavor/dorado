@@ -34,7 +34,11 @@ struct BasecallerNode::BasecallingChunk : utils::Chunk {
                      size_t offset,
                      size_t chunk_in_read_idx,
                      size_t chunk_size)
-            : BasecallingChunk(owner, offset, chunk_in_read_idx, chunk_size, chunk_size) {}
+            : BasecallingChunk(std::move(owner),
+                               offset,
+                               chunk_in_read_idx,
+                               chunk_size,
+                               chunk_size) {}
 
     BasecallingChunk(std::shared_ptr<BasecallingRead> owner,
                      size_t offset,
