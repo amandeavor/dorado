@@ -35,13 +35,15 @@ bool check_variable_chunk_sizes_supported(
         }
         return (model_config.lstm_size > 128) && (model_config.lstm_size <= 1024) &&
                ((model_config.lstm_size % 128) == 0);
-    } else if (model_config.is_flstm_model()) {
+    }
+    if (model_config.is_flstm_model()) {
         if (std::any_of(std::cbegin(device_ids), std::cend(device_ids),
                         [](const int device_id) { return !nn::koi_can_run_flstm(device_id); })) {
             return false;
         }
         return (model_config.lstm_size == 1024) && (model_config.lstm_inner_dim.value() == 128);
-    } else if (model_config.is_tx_model()) {
+    }
+    if (model_config.is_tx_model()) {
         if (std::any_of(std::cbegin(device_ids), std::cend(device_ids),
                         [](const int device_id) { return !nn::koi_can_run_tx_vcs(device_id); })) {
             return false;
@@ -54,10 +56,8 @@ bool check_variable_chunk_sizes_supported(
                                   (params.dim_feedforward == 2048);
         return is_sup_model;
     }
-    return false;
-#else
-    return false;
 #endif
+    return false;
 }
 
 std::pair<std::vector<basecall::RunnerPtr>, size_t> create_basecall_runners(

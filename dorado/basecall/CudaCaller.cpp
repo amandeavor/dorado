@@ -442,8 +442,7 @@ CudaCaller::BatchDimsAndMaxSizes CudaCaller::calculate_batch_sizes(
     // (adaptive sampling) we only want one (short) chunk size so that all those reads go into
     // the same queue and complete as fast as possible.
 
-    if (pipeline_type == PipelineType::simplex &&
-        !(variable_chunk_sizes && model_config.is_tx_model())) {
+    if (pipeline_type == PipelineType::simplex) {
         const char *env_extra_chunk_sizes = std::getenv("DORADO_EXTRA_CHUNK_SIZES");
         if (env_extra_chunk_sizes != nullptr) {
             constexpr char SEPARATOR = ';';
@@ -452,7 +451,7 @@ CudaCaller::BatchDimsAndMaxSizes CudaCaller::calculate_batch_sizes(
                 T_outs.insert(calculate_T_out(std::atoi(env_string.c_str() + start)));
                 end = env_string.find(SEPARATOR, start);
             }
-        } else {
+        } else if (!(variable_chunk_sizes && model_config.is_tx_model())) {
             // Use other chunk sizes as a fraction of the requested one
             // TODO: determine the best set of chunk sizes
             for (float fraction : {0.5f}) {
