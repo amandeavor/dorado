@@ -5,6 +5,7 @@
 
 #include <ATen/ops/empty.h>
 #include <ATen/ops/from_blob.h>
+#include <ATen/ops/zeros.h>
 
 #include <numeric>
 #include <stdexcept>

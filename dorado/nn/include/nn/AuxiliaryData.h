@@ -34,8 +34,6 @@ public:
 
     void restore_convolution_auxiliary_data();
 
-    at::Tensor device_chunk_intervals;
-    bool is_lstm_model() const { return is_lstm_model_; }
     bool is_tx_model() const { return is_tx_model_; }
     bool is_lstm_or_flstm_model() const { return !is_tx_model_; }
     std::int32_t chunk_size_granularity() const { return chunk_size_granularity_; }
