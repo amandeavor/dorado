@@ -98,7 +98,7 @@ void FLSTMStackImpl::reserve_working_memory(WorkingMemory &wm) {
     if (wm.layout == TensorLayout::CUTLASS_TNC_I8) {
         wm.temp({(2 * (wm.T + 1) * (int64_t)wm.N * (2 * K_)) +  // char
                  (4 * ((wm.T + 1) * (int64_t)wm.N)) +           // float
-                 (2 * (2 * (int64_t)wm.N * C_))},               // half
+                 (4 * ((int64_t)wm.N / 2U))},                   // int
                 torch::kU8);
     } else if ((wm.layout == TensorLayout::CUBLAS_TNC) ||
                (wm.layout == TensorLayout::CUTLASS_TNC_F16)) {
@@ -145,27 +145,22 @@ void FLSTMStackImpl::forward_koi(WorkingMemory &wm, const AuxiliaryData *aux) {
 
     auto stream = at::cuda::getCurrentCUDAStream().stream();
     auto opts_f16 = wm.current.options().dtype(torch::kF16);
-    auto opts_i32 = opts_f16.dtype(torch::kI32);
 
     const int64_t dn_bfr_size = 2 * (wm.T + 1) * (int64_t)wm.N * (2 * K_);
     const int64_t dn_scale_bfr_size = 4 * ((wm.T + 1) * (int64_t)wm.N);
-    const int64_t state_bfr_size = 2 * (2 * (int64_t)wm.N * C_);
+    const int64_t workspace_bfr_size = 4 * ((int64_t)wm.N / 2U);
 
-    auto temp_bfr = wm.temp({dn_bfr_size + dn_scale_bfr_size + state_bfr_size}, torch::kU8);
+    auto temp_bfr = wm.temp({dn_bfr_size + dn_scale_bfr_size + workspace_bfr_size}, torch::kU8);
     temp_bfr.zero_();
 
     auto dn_bfr = temp_bfr.narrow(0, 0, dn_bfr_size);
     auto dn_scale_bfr = temp_bfr.narrow(0, dn_bfr_size, dn_scale_bfr_size);
-    auto state_bfr = temp_bfr.narrow(0, dn_bfr_size + dn_scale_bfr_size, state_bfr_size);
-
-    void *const state = aux ? state_bfr.data_ptr() : nullptr;
+    auto workspace_bfr = temp_bfr.narrow(0, dn_bfr_size + dn_scale_bfr_size, workspace_bfr_size);
 
     for (int layer = 0; layer < std::ssize(layers_); ++layer) {
         utils::ScopedProfileRange spr_lstm("flstm_layer", 3);
 
         const bool reverse = first_reverse_ ^ (layer & 1);
-
-        auto workspace_bfr = torch::empty({8192}, opts_i32);
 
         if (std::ssize(device_up_weights_) == layer) {  // move weights to GPU first time around
             const auto &params = layers_[layer]->named_parameters();
@@ -230,7 +225,7 @@ void FLSTMStackImpl::forward_koi(WorkingMemory &wm, const AuxiliaryData *aux) {
 
         host_factorised_lstm(
                 stream, wm.N, wm.T + (aux && reverse), reverse ? -1 : 1, parity, inout.data_ptr(),
-                state, encoding, device_dn_weights_ih_[layer].data_ptr(),
+                workspace_bfr.data_ptr(), encoding, device_dn_weights_ih_[layer].data_ptr(),
                 device_dn_weights_scale_ih_[layer].data_ptr(),
                 device_dn_weights_hh_[layer].data_ptr(),
                 device_dn_weights_scale_hh_[layer].data_ptr(), dn_bfr.data_ptr(),

@@ -552,8 +552,8 @@ void TxEncoderImpl::koi_forward(utils::ScaledTensor &scaled_tensor, at::Tensor &
     if (res == KOI_SUCCESS && ++calls) {
         // Fused QKV Matmul Plus Rotary embedding
         utils::ScopedProfileRange spr("QKV+ROTE", 3);
-        res = koi_qkv_rotary(stream, self_attn->rotary_emb->theta, &in, &weights_qkv, &sincos,
-                             &out_qkv, ctr[0].data_ptr<int>());
+        res = koi_qkv_rotary(stream, &in, &weights_qkv, &sincos, &out_qkv, nullptr,
+                             ctr[0].data_ptr<int>());
     }
     if (res == KOI_SUCCESS && ++calls) {
         // Apply masket attention
