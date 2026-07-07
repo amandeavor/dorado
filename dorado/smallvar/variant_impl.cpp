@@ -1324,7 +1324,7 @@ std::vector<secondary::IntervalInt64> construct_trimmed_merge_regions(
     for (const auto& iv : merged_processed_regions) {
         // Bluntly trim the coords left/right.
         int64_t new_start = iv.start + trim;
-        const int64_t new_end = iv.stop - trim;
+        int64_t new_end = iv.stop - trim;
 
         if (new_start > new_end) {
             continue;
@@ -1352,6 +1352,23 @@ std::vector<secondary::IntervalInt64> construct_trimmed_merge_regions(
                     break;
                 }
                 new_start = next_new_start;
+            }
+
+            // Traverse all overlapping variants to move the new_end in case the end is partially covering
+            // a confident simple variant on the right flank.
+            while ((tree_iter != std::end(simple_variant_trees)) && (new_start < new_end)) {
+                int64_t next_new_end = new_end;
+                tree_iter->second.visit_overlapping(
+                        new_end, new_end,
+                        [&new_end, &next_new_end](const secondary::IntervalInt64& variant_span) {
+                            if (variant_span.start <= new_end) {
+                                next_new_end = std::min(next_new_end, variant_span.start - 1);
+                            }
+                        });
+                if (next_new_end >= new_end) {
+                    break;
+                }
+                new_end = next_new_end;
             }
 
             if (new_start > new_end) {

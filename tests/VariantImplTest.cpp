@@ -1465,8 +1465,8 @@ CATCH_TEST_CASE(
      *   processed      [============)  [0,13)
      *   callable            [==)       [5,8) after flank_trim=5
      *   Inference           ACCGGG     [5,11) TTTCCC -> ACCGGG
-     *   Inf-final           ACC        [5,8)  TTT -> ACC           -> First variant
-     *   Kadayashi              GGG     positions 8,9,10            -> Second variant
+     *   Inf-final           AC         [5,7)  TTT -> ACC           -> First variant
+     *   Kadayashi             CGGG     positions 7,8,9,10          -> Second variant
      *
      * Decoding is clipped to the callable merge region so the retained inference variant ends
      * before the right-flank simple SNPs.
@@ -1489,12 +1489,13 @@ CATCH_TEST_CASE(
                                            {0.999999f, 0.999999f}),
     };
 
-    const auto make_simple_snp = [](const int64_t pos) {
+    const auto make_simple_snp = [](const int64_t pos, const std::string& ref,
+                                    const std::string& alt) {
         return secondary::Variant{
                 .seq_id = 0,
                 .pos = pos,
-                .ref = "C",
-                .alts = {"G"},
+                .ref = ref,
+                .alts = {alt},
                 .filter = "PASS",
                 .info = {},
                 .qual = 60.0f,
@@ -1503,8 +1504,12 @@ CATCH_TEST_CASE(
                 .rend = 0,
         };
     };
-    const std::vector<secondary::Variant> simple_variants{make_simple_snp(8), make_simple_snp(9),
-                                                          make_simple_snp(10)};
+    const std::vector<secondary::Variant> simple_variants{
+            make_simple_snp(7, "T", "C"),
+            make_simple_snp(8, "C", "G"),
+            make_simple_snp(9, "C", "G"),
+            make_simple_snp(10, "C", "G"),
+    };
 
     std::vector<ChromosomeReduceData> chrom_reduce_data(1);
     {
@@ -1546,7 +1551,7 @@ CATCH_TEST_CASE(
 
     const std::vector<secondary::Variant> expected_inference_variants{
             secondary::Variant{
-                    0, 5, "TTT", {"ACC"}, "PASS", {}, 52.161f, {{"GT", "1/1"}, {"GQ", "52"}}, 0, 3},
+                    0, 5, "TT", {"AC"}, "PASS", {}, 53.922f, {{"GT", "1/1"}, {"GQ", "54"}}, 0, 2},
     };
 
     std::vector<secondary::Variant> expected_merged_variants = expected_inference_variants;
