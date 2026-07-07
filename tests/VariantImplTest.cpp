@@ -1326,11 +1326,11 @@ CATCH_TEST_CASE("worker_variant_writer frees per-chromosome output buffers after
 
     // Run worker_variant_writer.
     {
-        secondary::VCFWriter merged_writer(merged_vcf, filters, contigs);
+        secondary::VCFWriter merged_writer(merged_vcf, filters, contigs, false);
         std::optional<secondary::VCFWriter> simple_writer{std::in_place, simple_vcf, filters,
-                                                          contigs};
+                                                          contigs, false};
         std::optional<secondary::VCFWriter> inference_writer{std::in_place, inference_vcf, filters,
-                                                             contigs};
+                                                             contigs, false};
         std::ofstream ofs_regions(processed_regions_bed);
 
         worker_variant_writer(input_queue, chrom_reduce_data, worker_terminate, ret_status,
@@ -1930,11 +1930,11 @@ CATCH_TEST_CASE("worker_variant_calling_reduce emits diploid gVCF records around
         data.seq_id = 0;
         data.seq_name = "chr1";
         data.seq_len = 4;
-        data.progress_target = 3;
+        data.progress_target = 4;
         data.ready = true;
         data.num_samples = 0;
-        data.selected_regions = {secondary::RegionInt{0, 1, 4}};
-        data.variants_simple = {secondary::Variant{0, 1, "C", {"C"}, "PASS", {}, 41.0f,
+        data.selected_regions = {secondary::RegionInt{0, 0, 4}};
+        data.variants_simple = {secondary::Variant{0, 1, "C", {"A"}, "PASS", {}, 41.0f,
                                                    {{"GT", "1/1"}, {"GQ", "41"}}, 0, 0},
                                 secondary::Variant{0, 2, "G", {"T"}, "PASS", {}, 42.0f,
                                                    {{"GT", "1/1"}, {"GQ", "42"}}, 0, 0}};
@@ -1969,15 +1969,19 @@ CATCH_TEST_CASE("worker_variant_calling_reduce emits diploid gVCF records around
     CATCH_REQUIRE(!ret_status.exception_thrown);
     CATCH_REQUIRE(!worker_terminate.load());
     CATCH_REQUIRE(chrom_reduce_data[0].variants_merged ==
-                  std::vector{secondary::Variant{0, 1, "C", {"."}, ".", {}, 60.0f,
-                                                 {{"GT", "0/0"}, {"GQ", "60"}}, 1, 2},
-                              secondary::Variant{0, 1, "C", {"C"}, "PASS", {}, 41.0f,
+                  std::vector{secondary::Variant{0, 0, "A", {"<*>"}, ".",
+                                                 {{"END", "1"}}, 60.0f,
+                                                 {{"GT", "0/0"}, {"GQ", "60"}, {"LEN", "1"}}, 0,
+                                                 1},
+                              secondary::Variant{0, 1, "C", {"A"}, "PASS", {}, 41.0f,
                                                  {{"GT", "1/1"}, {"GQ", "41"}}, 0, 0},
                               secondary::Variant{0, 2, "G", {"T"}, "PASS", {}, 42.0f,
                                                  {{"GT", "1/1"}, {"GQ", "42"}}, 0, 0},
-                              secondary::Variant{0, 3, "T", {"."}, ".", {}, 60.0f,
-                                                 {{"GT", "0/0"}, {"GQ", "60"}}, 3, 4}});
-    CATCH_CHECK(stats.get_stats().at("processed") == 3.0);
+                              secondary::Variant{0, 3, "T", {"<*>"}, ".",
+                                                 {{"END", "4"}}, 60.0f,
+                                                 {{"GT", "0/0"}, {"GQ", "60"}, {"LEN", "1"}}, 3,
+                                                 4}});
+    CATCH_CHECK(stats.get_stats().at("processed") == 4.0);
     CATCH_CHECK(std::size(output_queue) == 1);
     // clang-format on
 }

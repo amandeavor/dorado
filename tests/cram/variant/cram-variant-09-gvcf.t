@@ -9,15 +9,17 @@ Candidate-filtered gVCF emits non-variant records for regions with no candidates
   > echo "Exit code: $?"
   > grep "\[error\]" out/stderr | sed -E 's/.*\[/\[/g'
   > grep "\[warning\]" out/stderr | sed -E 's/.*\[/\[/g'
+  > grep -E "^##INFO=<ID=END|^##ALT=<ID=\*|^##FORMAT=<ID=LEN" out/variants.vcf
   > grep -v "^#" out/variants.vcf > out/gvcf.body.vcf
   > wc -l out/gvcf.body.vcf | awk '{ print $1 }'
-  > awk 'NR == 1 || NR == 100 { print $1, $2, $4, $5, $7, $9, $10 }' out/gvcf.body.vcf
+  > awk 'NR == 1 { print $1, $2, $4, $5, $7, $8, $9, $10 }' out/gvcf.body.vcf
   Exit code: 0
   [warning] Skipping basecaller compatibility checks for user-specified model override. The accuracy of the results is not guaranteed.
   [warning] Variant calling model is not compatible with the input BAM. This may produce inferior results.
-  100
-  chr20 1 T . . GT:GQ 0/0:60
-  chr20 100 T . . GT:GQ 0/0:60
+  ##INFO=<ID=END,Number=1,Type=Integer,Description="End position of the reference block">
+  ##FORMAT=<ID=LEN,Number=1,Type=Integer,Description="Length of <*> reference block">
+  1
+  chr20 1 T <*> . END=100 GT:GQ:LEN 0/0:60:100
 
 Candidate-filtered gVCF emits inferred variants and reference records for a targeted region.
 The `in.varcall.unsr.list` has the first candidate on position 1614. The variant calling is started at position 1000 to encompass non-inferred regions too.
@@ -45,11 +47,13 @@ chr20	1959	1
   > ### Check the non-variant non-inferred gVCF reference region (GQ is 60)
   > head -n 5 out/gvcf.body.no_qual.vcf | sed -E 's/\t/ /g'
   > ### Check the non-variant reference call from an inferred window (GQ is computed)
-  > grep "1615" out/gvcf.body.no_qual.vcf | sed -E 's/\t/ /g'
+  > awk '$2 == 1615' out/gvcf.body.no_qual.vcf | sed -E 's/\t/ /g'
+  > ### Check that all reference records use the <*> block form
+  > awk '$5 == "."' out/gvcf.body.no_qual.vcf
   > ### Check a variant call
-  > grep "1614" out/gvcf.body.no_qual.vcf | sed -E 's/\t/ /g'
+  > awk '$2 == 1472' out/gvcf.body.no_qual.vcf | sed -E 's/\t/ /g'
   > ### Check that a variant position does not also emit a reference record
-  > grep "1959" out/gvcf.body.no_qual.vcf | sed -E 's/\t/ /g'
+  > awk '$2 == 1959' out/gvcf.body.no_qual.vcf | sed -E 's/\t/ /g'
   Exit code: 0
   [warning] Skipping basecaller compatibility checks for user-specified model override. The accuracy of the results is not guaranteed.
   [warning] Variant calling model is not compatible with the input BAM. This may produce inferior results.
@@ -57,15 +61,15 @@ chr20	1959	1
   chr20 1534 1812
   chr20 1714 2001
   chr20 1860 2145
-  1146
-  chr20 1000 . G . . . GT:GQ 0/0:60
-  chr20 1001 . C . . . GT:GQ 0/0:60
-  chr20 1002 . G . . . GT:GQ 0/0:60
-  chr20 1003 . A . . . GT:GQ 0/0:60
-  chr20 1004 . C . . . GT:GQ 0/0:60
-  chr20 1615 . C . . . GT:GQ 0/0:54
-  chr20 1614 . T . . . GT:GQ 0/0:60
-  chr20 1959 . T G PASS . GT:GQ 0/1:44
+  20
+  chr20 1000 . G <*> . END=1345 GT:GQ:LEN 0/0:60:346
+  chr20 1346 . G <*> . END=1471 GT:GQ:LEN 0/0:60:126
+  chr20 1472 . T G,<*> PASS . GT:GQ 0/1:42
+  chr20 1473 . C <*> . END=1555 GT:GQ:LEN 0/0:60:83
+  chr20 1556 . C <*> . END=1557 GT:GQ:LEN 0/0:50:2
+  chr20 1615 . C <*> . END=1615 GT:GQ:LEN 0/0:54:1
+  chr20 1472 . T G,<*> PASS . GT:GQ 0/1:42
+  chr20 1959 . T G,<*> PASS . GT:GQ 0/1:44
 
 Candidate-filtered gVCF handles a whole-contig region with omitted bounds.
   $ rm -rf out; mkdir -p out
@@ -80,13 +84,12 @@ Candidate-filtered gVCF handles a whole-contig region with omitted bounds.
   > grep "\[warning\]" out/stderr | sed -E 's/.*\[/\[/g'
   > grep -v "^#" out/variants.vcf > out/gvcf.body.vcf
   > wc -l out/gvcf.body.vcf | awk '{ print $1 }'
-  > awk 'NR == 1 || NR == 10000 { print $1, $2, $4, $5, $7, $9, $10 }' out/gvcf.body.vcf
+  > awk 'NR == 1 { print $1, $2, $4, $5, $7, $8, $9, $10 }' out/gvcf.body.vcf
   Exit code: 0
   [warning] Skipping basecaller compatibility checks for user-specified model override. The accuracy of the results is not guaranteed.
   [warning] Variant calling model is not compatible with the input BAM. This may produce inferior results.
-  10000
-  chr20 1 T . . GT:GQ 0/0:60
-  chr20 10000 C . . GT:GQ 0/0:60
+  1
+  chr20 1 T <*> . END=10000 GT:GQ:LEN 0/0:60:10000
 
 Candidate-filtered gVCF handles a region with an omitted end.
   $ rm -rf out; mkdir -p out
@@ -101,10 +104,9 @@ Candidate-filtered gVCF handles a region with an omitted end.
   > grep "\[warning\]" out/stderr | sed -E 's/.*\[/\[/g'
   > grep -v "^#" out/variants.vcf > out/gvcf.body.vcf
   > wc -l out/gvcf.body.vcf | awk '{ print $1 }'
-  > awk 'NR == 1 || NR == 10 { print $1, $2, $4, $5, $7, $9, $10 }' out/gvcf.body.vcf
+  > awk 'NR == 1 { print $1, $2, $4, $5, $7, $8, $9, $10 }' out/gvcf.body.vcf
   Exit code: 0
   [warning] Skipping basecaller compatibility checks for user-specified model override. The accuracy of the results is not guaranteed.
   [warning] Variant calling model is not compatible with the input BAM. This may produce inferior results.
-  10
-  chr20 9991 A . . GT:GQ 0/0:60
-  chr20 10000 C . . GT:GQ 0/0:60
+  1
+  chr20 9991 A <*> . END=10000 GT:GQ:LEN 0/0:60:10

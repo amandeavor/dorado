@@ -1166,8 +1166,8 @@ void run_variant_calling(const Options& opt,
     };
 
     // VCF writer, nullptr unless variant calling is run.
-    std::unique_ptr<secondary::VCFWriter> vcf_writer =
-            std::make_unique<secondary::VCFWriter>(out_vcf_fn, vcf_filters, draft_lens);
+    std::unique_ptr<secondary::VCFWriter> vcf_writer = std::make_unique<secondary::VCFWriter>(
+            out_vcf_fn, vcf_filters, draft_lens, opt.out_format == VariantCallingFormatEnum::GVCF);
 
     // Optionally write Kadayashi variants.
     std::optional<secondary::VCFWriter> vcf_writer_kadayashi;
@@ -1175,11 +1175,12 @@ void run_variant_calling(const Options& opt,
     if (candidate_filtering && opt.dump_variants) {
         const std::string out_vcf_kadayashi_fn =
                 (std::empty(opt.output_dir)) ? "-" : (opt.output_dir / "kadayashi.vcf").string();
-        vcf_writer_kadayashi.emplace(out_vcf_kadayashi_fn, vcf_filters, draft_lens);
+        vcf_writer_kadayashi.emplace(out_vcf_kadayashi_fn, vcf_filters, draft_lens, false);
 
         const std::string out_vcf_inference_fn =
                 (std::empty(opt.output_dir)) ? "-" : (opt.output_dir / "inference.vcf").string();
-        vcf_writer_inference.emplace(out_vcf_inference_fn, vcf_filters, draft_lens);
+        vcf_writer_inference.emplace(out_vcf_inference_fn, vcf_filters, draft_lens,
+                                     opt.out_format == VariantCallingFormatEnum::GVCF);
     }
 
     // Compute the minimum usable memory across all devices and use that as the batch size.

@@ -4,6 +4,7 @@
 #include "secondary/consensus/consensus_utils.h"
 #include "torch_utils/tensor_utils.h"
 #include "utils/rle.h"
+#include "utils/sequence_utils.h"
 
 #include <ATen/ATen.h>
 #include <cxxpool.h>
@@ -49,6 +50,17 @@ bool is_subset_of_symbols(const std::unordered_set<char>& symbol_map,
         }
     }
     return true;
+}
+
+std::string make_reference_gt(const int32_t ploidy, const char allele) {
+    std::ostringstream oss_gt;
+    for (int32_t i = 0; i < ploidy; ++i) {
+        if (i > 0) {
+            oss_gt << '/';
+        }
+        oss_gt << allele;
+    }
+    return oss_gt.str();
 }
 
 /**
@@ -631,15 +643,6 @@ bool append_ref_base(Variant& var,
 
 }  // namespace
 
-bool variant_ends_before_position(const Variant& var, const int32_t seq_id, const int64_t pos) {
-    return (var.seq_id == seq_id) && ((var.pos + std::max<int64_t>(1, std::ssize(var.ref))) <= pos);
-}
-
-bool variant_covers_position(const Variant& var, const int32_t seq_id, const int64_t pos) {
-    return (var.seq_id == seq_id) && (var.pos <= pos) &&
-           !variant_ends_before_position(var, seq_id, pos);
-}
-
 Variant normalize_genotype(const Variant& var, const int32_t ploidy, const float min_qual) {
     Variant ret = var;
 
@@ -654,18 +657,21 @@ Variant normalize_genotype(const Variant& var, const int32_t ploidy, const float
     const int32_t gq = static_cast<int32_t>(std::round(var.qual));
 
     // This is a gVCF record.
-    if (std::empty(var.alts) || (var.filter == ".") ||
-        (var.alts == std::vector<std::string>{"."})) {
-        std::ostringstream oss_gt;
-        for (int32_t i = 0; i < ploidy; ++i) {
-            if (i > 0) {
-                oss_gt << '/';
-            }
-            oss_gt << '0';
+    if (is_reference_record(var)) {
+        const bool is_missing_call =
+                (std::size(var.ref) == 1) && !utils::is_canonical_base(var.ref.front());
+        const char genotype_allele = is_missing_call ? '.' : '0';
+
+        if (std::empty(ret.alts)) {
+            ret.alts = {"."};
         }
 
-        ret.alts = {"."};
-        ret.genotype = {{"GT", std::move(oss_gt).str()}, {"GQ", std::to_string(gq)}};
+        const std::string gq_str = (genotype_allele == '.') ? "." : std::to_string(gq);
+
+        if (is_missing_call) {
+            ret.qual = -1.0f;
+        }
+        ret.genotype = {{"GT", make_reference_gt(ploidy, genotype_allele)}, {"GQ", gq_str}};
         ret.filter = ".";
         return ret;
     }
@@ -715,19 +721,30 @@ Variant collapse_to_haploid(const Variant& var, const bool require_hom) {
     Variant ret = var;
 
     // This is a gVCF record.
-    if ((var.filter == ".") || (var.alts == std::vector<std::string>{"."})) {
-        ret.alts = {"."};
+    if (is_reference_record(var)) {
+        if (std::empty(ret.alts)) {
+            ret.alts = {"."};
+        }
+        const bool is_missing_call =
+                (std::size(ret.ref) == 1) && !utils::is_canonical_base(ret.ref.front());
         ret.filter = ".";
-        for (auto& it_gt : ret.genotype) {
-            if (it_gt.first == "GT") {
-                it_gt.second = "0";
-                break;
+        if (is_missing_call) {
+            ret.qual = -1.0f;
+        }
+        for (auto& val : ret.genotype) {
+            if (val.first == "GT") {
+                val.second = is_missing_call ? "." : "0";
+            } else if (is_missing_call && (val.first == "GQ")) {
+                val.second = ".";
             }
         }
         return ret;
     }
 
-    if (std::ssize(var.alts) > 1) {
+    const int64_t num_called_alts =
+            std::count_if(std::cbegin(var.alts), std::cend(var.alts),
+                          [](const std::string& alt) { return alt != "<*>"; });
+    if (num_called_alts > 1) {
         spdlog::debug("Discarding variant with more than one alt in haploid region ({}, {}).",
                       var.seq_id, var.pos);
         ret.alts.clear();
@@ -1024,7 +1041,8 @@ std::vector<Variant> general_decode_variants(
         const bool return_all,
         const bool normalize,
         const bool merge_overlapping,
-        const bool merge_adjacent) {
+        const bool merge_adjacent,
+        const std::span<const std::pair<int64_t, float>> gvcf_reference_block_gq_margins) {
     const int64_t num_columns = std::ssize(positions_major);
 
     // Validate inputs.
@@ -1199,32 +1217,95 @@ std::vector<Variant> general_decode_variants(
         const std::size_t num_existing_variants = std::size(variants);
         std::size_t variant_idx = 0;
 
-        for (int64_t i = 0; i < std::ssize(positions_major); ++i) {
+        const auto find_next_variant = [&](std::size_t idx, const int64_t pos) {
+            while ((idx < num_existing_variants) &&
+                   variant_ends_before_position(variants[idx], seq_id, pos)) {
+                ++idx;
+            }
+            return idx;
+        };
+
+        const auto get_reference_gq = [&](const bool is_callable, const int64_t start,
+                                          const int64_t end) {
+            if (!is_callable) {
+                return 0.0f;
+            }
+            return round_float(
+                    compute_ref_quality(probs_3D, ref_seq_with_gaps, symbol_lookup, start, end), 3);
+        };
+
+        int64_t i = 0;
+        while (i < std::ssize(positions_major)) {
             // Skip non-reference positions.
             if (positions_minor[i] != 0) {
+                ++i;
                 continue;
             }
 
             const int64_t pos = positions_major[i];
-            const std::string ref(1, draft[pos]);
-
-            while ((variant_idx < num_existing_variants) &&
-                   variant_ends_before_position(variants[variant_idx], seq_id, pos)) {
-                ++variant_idx;
-            }
-
+            variant_idx = find_next_variant(variant_idx, pos);
             if ((variant_idx < num_existing_variants) &&
                 variant_covers_position(variants[variant_idx], seq_id, pos)) {
+                ++i;
                 continue;
             }
 
+            const int64_t block_start_idx = i;
+            const int64_t block_start_pos = pos;
+            int64_t block_end_idx = i + 1;
+            int64_t block_end_pos = pos + 1;
+            const bool is_callable_block = utils::is_canonical_base(draft[block_start_pos]);
+
+            const float first_gq =
+                    get_reference_gq(is_callable_block, block_start_idx, block_end_idx);
+            const float gq_margin =
+                    get_gvcf_reference_record_gq_margin(first_gq, gvcf_reference_block_gq_margins);
+            float min_gq = first_gq;
+
+            ++i;
+            while (i < std::ssize(positions_major)) {
+                if (positions_minor[i] != 0) {
+                    ++i;
+                    continue;
+                }
+
+                const int64_t current_pos = positions_major[i];
+                variant_idx = find_next_variant(variant_idx, current_pos);
+                if ((current_pos != block_end_pos) ||
+                    ((variant_idx < num_existing_variants) &&
+                     variant_covers_position(variants[variant_idx], seq_id, current_pos))) {
+                    break;
+                }
+
+                if (utils::is_canonical_base(draft[current_pos]) != is_callable_block) {
+                    break;
+                }
+                const float current_gq = get_reference_gq(is_callable_block, i, i + 1);
+                if (std::fabs(current_gq - first_gq) > gq_margin) {
+                    break;
+                }
+
+                min_gq = std::min(min_gq, current_gq);
+                block_end_idx = i + 1;
+                block_end_pos = current_pos + 1;
+                ++i;
+            }
+
+            const std::string ref(1, draft[block_start_pos]);
             Variant var{
-                    seq_id, pos, ref, {"."}, ".", {}, 0.0f, {{"GT", "0"}, {"GQ", "0"}}, i, (i + 1),
+                    seq_id,
+                    block_start_pos,
+                    ref,
+                    {"."},
+                    ".",
+                    {},
+                    min_gq,
+                    {{"GT", "0"}, {"GQ", "0"}},
+                    block_start_idx,
+                    block_end_idx,
             };
 
-            var.qual = round_float(compute_ref_quality(probs_3D, ref_seq_with_gaps, symbol_lookup,
-                                                       var.rstart, var.rend),
-                                   3);
+            set_gvcf_reference_block_end(var, block_end_pos);
 
             variants.emplace_back(std::move(var));
         }
@@ -1237,6 +1318,10 @@ std::vector<Variant> general_decode_variants(
     normalized_variants.reserve(std::size(variants));
     for (const Variant& var : variants) {
         Variant new_var = normalize_genotype(var, num_haplotypes, pass_min_qual);
+        if (const auto it = new_var.info.find("END");
+            (new_var.filter == ".") && (it != std::cend(new_var.info))) {
+            set_gvcf_reference_block_end(new_var, std::stoll(it->second));
+        }
 
         // Sanity check.
         if (is_valid(new_var)) {

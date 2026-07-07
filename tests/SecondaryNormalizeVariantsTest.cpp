@@ -327,6 +327,13 @@ CATCH_TEST_CASE("collapse_to_haploid", TEST_GROUP) {
             false,
         },
         TestCase{
+            "Diploid gVCF N reference record should collapse to haploid no-call",
+            Variant{0, 4, "N", {"<*>"}, ".", {{"END", "5"}}, 0.0f, {{"GT", "./."}, {"GQ", "."}, {"LEN", "1"}}, 4, 5},
+            Variant{0, 4, "N", {"<*>"}, ".", {{"END", "5"}}, -1.0f, {{"GT", "."}, {"GQ", "."}, {"LEN", "1"}}, 4, 5},
+            true,
+            false,
+        },
+        TestCase{
             "Diploid, homozygous, require_hom=true, should always be collapsed",
             Variant{0, 2, "CA", {"C"}, "PASS", {}, 43.0f, {{"GT", "1/1"}, {"GQ", "43"}}, 2, 4},
             Variant{0, 2, "CA", {"C"}, "PASS", {}, 43.0f, {{"GT", "1"}, {"GQ", "43"}}, 2, 4},
