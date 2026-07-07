@@ -1487,9 +1487,10 @@ void ck_absorb_variants_covered_by_deletion_run_on_other_hap(
 
 void ck_derive_variant_genophase_from_phased_read(chunk_t &ck) {
     // note: for multi-allele variant, the genotype will be assigned
-    // 0 or 1 here rather than 1 or 2. Afterwards
-    // derive_variant_fullinfo_from_varcall is expected to be called.
-    constexpr int MIN_AMBIGUOUS_ALT_COV = 4;
+    //  0 or 1 here rather than 1 or 2. Afterwards
+    //  derive_variant_fullinfo_from_varcall is expected to be called.
+    // note2: we don't want to impose any coverage check here. That
+    //  is up to the variant classifier.
     for (ta_t &var : ck.varcalls) {
         var.genotype = {'.', '/', '.', '\0'};
 
@@ -1532,21 +1533,16 @@ void ck_derive_variant_genophase_from_phased_read(chunk_t &ck) {
                     n_hap1++;
                 }
             }
-            if (n_hap0 >= MIN_AMBIGUOUS_ALT_COV && n_hap1 >= MIN_AMBIGUOUS_ALT_COV) {
-                // unphased
+
+            // note: here set both het and multihet to 01, let this be resolved
+            // when we parse ta_t var into fullinfo var
+            if (n_hap0 > n_hap1) {
+                var.genotype = {'0', '|', '1', '\0'};
+            } else if (n_hap1 > n_hap0) {
+                var.genotype = {'1', '|', '0', '\0'};
+            } else {  // unphased
                 var.genotype[0] = '0';
                 var.genotype[2] = '1';
-            } else {
-                // note: here set both het and multihet to 01, let this be resolved
-                // when we parse ta_t var into fullinfo var
-                if (n_hap0 > n_hap1) {
-                    var.genotype = {'0', '|', '1', '\0'};
-                } else if (n_hap1 > n_hap0) {
-                    var.genotype = {'1', '|', '0', '\0'};
-                } else {  // unphased
-                    var.genotype[0] = '0';
-                    var.genotype[2] = '1';
-                }
             }
         }  // determine het variant phase+geno
 

@@ -11,7 +11,6 @@
 #include "utils/cigar.h"
 
 #include <catch2/catch_test_macros.hpp>
-//#include <spdlog/spdlog.h>
 #include <htslib/faidx.h>
 #include <htslib/khash.h>
 #include <htslib/khash_str2int.h>
@@ -829,6 +828,44 @@ CATCH_TEST_CASE("kadayashi_varcall normal case", TEST_GROUP) {
                 pp.max_gapcompressed_seqdiv, false, false /*ambig_ref*/);
         CATCH_CHECK(result3.variants.empty());
     }
+}
+CATCH_TEST_CASE("kadayashi_varcall normal case2", TEST_GROUP) {
+    // The DEL should be phased and be a multi-allele DEL due to
+    // taking in a SNP on the other hap.
+    const std::filesystem::path test_data_dir =
+            get_data_dir("variant") / "test-08-supertiny-deletion-absorbtion";
+    const std::filesystem::path fn_bam = test_data_dir / "in.aln.bam";
+    const std::filesystem::path fn_ref = test_data_dir / "in.ref.fa.gz";
+
+    dorado::secondary::BamFile bam_reader(fn_bam, 1);
+    dorado::hts_io::FastxRandomReader fastx_reader(fn_ref);
+
+    CATCH_REQUIRE(bam_reader.fp());
+    CATCH_REQUIRE(bam_reader.idx());
+    CATCH_REQUIRE(bam_reader.hdr());
+    CATCH_REQUIRE(fastx_reader.get_raw_faidx_ptr());
+
+    const kadayashi::pileup_pars_t pp{.max_clipping = 100000};
+
+    const kadayashi::varcall_result_t result = kadayashi::kadayashi_phase_and_varcall_wrapper(
+            bam_reader.fp(), bam_reader.idx(), bam_reader.hdr(), fastx_reader.get_raw_faidx_ptr(),
+            "chr1:23935672-23936360", 0, 700, "" /*readgroup*/, pp.disable_region_expansion,
+            pp.min_base_quality, pp.min_varcall_coverage, pp.min_varcall_fraction, pp.max_clipping,
+            1 /*min strand cov*/, 0.033f, pp.max_gapcompressed_seqdiv, false, false /*ambig_ref*/);
+
+    int passed = 0;
+    for (const variant_dorado_style_t &var : result.variants) {
+        if (var.pos == 113) {  // coordinate on hg38: 23935784 (0-idx)
+            CATCH_REQUIRE(var.is_confident);
+            CATCH_REQUIRE(var.is_phased);
+            CATCH_REQUIRE(((var.genotype.first == '2') || (var.genotype.second == '2')));
+            CATCH_REQUIRE(var.alts.size() == 2);
+            CATCH_REQUIRE(var.alts[0].size() > 0);
+            CATCH_REQUIRE(var.alts[1].size() > 0);
+            passed++;
+        }
+    }
+    CATCH_REQUIRE(passed == 1);
 }
 
 CATCH_TEST_CASE("kadayashi_varcall ambig-ref", TEST_GROUP) {
