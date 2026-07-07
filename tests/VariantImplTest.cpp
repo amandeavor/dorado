@@ -1441,7 +1441,7 @@ CATCH_TEST_CASE(
     CATCH_CHECK(chrom_reduce_data[0].variants_merged == std::vector{simple_variant});
     CATCH_REQUIRE(std::size(chrom_reduce_data[0].processed_regions) == 1);
     CATCH_CHECK(chrom_reduce_data[0].processed_regions[0].start == 4);
-    CATCH_CHECK(chrom_reduce_data[0].processed_regions[0].stop == 6);
+    CATCH_CHECK(chrom_reduce_data[0].processed_regions[0].stop == 5);
     CATCH_CHECK(chrom_reduce_data[0].processed_regions[0].value == 0);
     CATCH_CHECK(std::size(output_queue) == 1);
     CATCH_CHECK(stats.get_stats().at("processed") == 2.0);
@@ -1449,6 +1449,228 @@ CATCH_TEST_CASE(
     int64_t ready_seq_id = -1;
     CATCH_REQUIRE(output_queue.try_pop(ready_seq_id) == utils::AsyncQueueStatus::Success);
     CATCH_CHECK(ready_seq_id == 0);
+}
+
+CATCH_TEST_CASE(
+        "worker_variant_calling_reduce trims inference variants before right trimmed flank simple "
+        "variants",
+        TEST_GROUP) {
+    /*
+     * This reproduces the right-flank leak that happens if an inference variant can extend
+     * beyond the callable merge region and into the right trimmed flank.
+     *
+     *                  0    5    10  13
+     *                  |----|----|--|
+     *   reference      AAAAATTTCCCGG
+     *   processed      [============)  [0,13)
+     *   callable            [==)       [5,8) after flank_trim=5
+     *   Inference           ACCGGG     [5,11) TTTCCC -> ACCGGG
+     *   Inf-final           AC         [5,7)  TTT -> ACC           -> First variant
+     *   Kadayashi             CGGG     positions 7,8,9,10          -> Second variant
+     *
+     * Decoding is clipped to the callable merge region so the retained inference variant ends
+     * before the right-flank simple SNPs.
+     */
+    const auto temp_dir = make_temp_dir("variant_reduce_right_trim_overlap");
+    const auto reference_fasta = temp_dir.m_path / "reference.fa";
+
+    {
+        std::ofstream ref_out(reference_fasta);
+        ref_out << ">chr1\nAAAAATTTCCCGG\n";
+    }
+
+    const secondary::DecoderBase decoder(secondary::LabelSchemeType::DIPLOID);
+    secondary::VariantCallingSample vc_sample{
+            .seq_id = 0,
+            .positions_major = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12},
+            .positions_minor = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+            .logits = make_polyploid_probs(decoder.get_label_scheme_symbols(),
+                                           {"AAAAAACCGGGGG", "AAAAAACCGGGGG"},
+                                           {0.999999f, 0.999999f}),
+    };
+
+    const auto make_simple_snp = [](const int64_t pos, const std::string& ref,
+                                    const std::string& alt) {
+        return secondary::Variant{
+                .seq_id = 0,
+                .pos = pos,
+                .ref = ref,
+                .alts = {alt},
+                .filter = "PASS",
+                .info = {},
+                .qual = 60.0f,
+                .genotype = {{"GT", "1/1"}, {"GQ", "60"}},
+                .rstart = 0,
+                .rend = 0,
+        };
+    };
+    const std::vector<secondary::Variant> simple_variants{
+            make_simple_snp(7, "T", "C"),
+            make_simple_snp(8, "C", "G"),
+            make_simple_snp(9, "C", "G"),
+            make_simple_snp(10, "C", "G"),
+    };
+
+    std::vector<ChromosomeReduceData> chrom_reduce_data(1);
+    {
+        ChromosomeReduceData& data = chrom_reduce_data[0];
+        data.seq_id = 0;
+        data.seq_name = "chr1";
+        data.seq_len = 13;
+        data.progress_target = 13;
+        data.ready = true;
+        data.num_samples = 1;
+        data.variants_simple = simple_variants;
+    }
+
+    std::vector<std::unique_ptr<hts_io::FastxRandomReader>> fastx_readers;
+    fastx_readers.emplace_back(std::make_unique<hts_io::FastxRandomReader>(reference_fasta));
+
+    const std::vector<std::pair<std::string, int64_t>> draft_lens{
+            {"chr1", 13},
+    };
+
+    utils::AsyncQueue<secondary::VariantCallingSample> input_queue{2};
+    utils::AsyncQueue<int64_t> output_queue{2};
+    CATCH_REQUIRE(input_queue.try_push(std::move(vc_sample)) == utils::AsyncQueueStatus::Success);
+    input_queue.terminate(utils::AsyncQueueTerminateFast::No);
+
+    std::atomic<bool> worker_terminate{false};
+    secondary::WorkerReturnStatus ret_status;
+
+    secondary::Stats stats;
+    stats.set("processed", 0.0);
+
+    worker_variant_calling_reduce(input_queue, output_queue, chrom_reduce_data, worker_terminate,
+                                  ret_status, stats, fastx_readers, false, 1, draft_lens, decoder,
+                                  {}, 30.0f, false, false, 2, 5,
+                                  secondary::VariantCandidateSource::COMPUTE);
+
+    CATCH_REQUIRE(!ret_status.exception_thrown);
+    CATCH_REQUIRE(!worker_terminate.load());
+
+    const std::vector<secondary::Variant> expected_inference_variants{
+            secondary::Variant{
+                    0, 5, "TT", {"AC"}, "PASS", {}, 53.922f, {{"GT", "1/1"}, {"GQ", "54"}}, 0, 2},
+    };
+
+    std::vector<secondary::Variant> expected_merged_variants = expected_inference_variants;
+    expected_merged_variants.insert(std::end(expected_merged_variants), std::begin(simple_variants),
+                                    std::end(simple_variants));
+
+    CATCH_CHECK(chrom_reduce_data[0].variants_inference == expected_inference_variants);
+    CATCH_CHECK(chrom_reduce_data[0].variants_merged == expected_merged_variants);
+
+    CATCH_REQUIRE(std::size(chrom_reduce_data[0].processed_regions) == 1);
+    CATCH_CHECK(chrom_reduce_data[0].processed_regions[0].start == 0);
+    CATCH_CHECK(chrom_reduce_data[0].processed_regions[0].stop == 12);
+    CATCH_CHECK(chrom_reduce_data[0].processed_regions[0].value == 0);
+    CATCH_CHECK(std::size(output_queue) == 1);
+    CATCH_CHECK(stats.get_stats().at("processed") == 13.0);
+}
+
+CATCH_TEST_CASE(
+        "worker_variant_calling_reduce trims inference variants after left trimmed flank simple "
+        "variants",
+        TEST_GROUP) {
+    /*
+     * This reproduces the left-flank leak that happens if a long simple/Kadayashi variant starts
+     * before the callable merge region but extends into a retained inference variant.
+     *
+     *                  0    5    10   16
+     *                  |----|----|----|
+     *   reference      AAAAATTTCCCGGGAA
+     *   processed      [===============)   [0,16)
+     *   callable            [=====)        [5,11) after flank_trim=5
+     *   Kadayashi        CCCCCC            [2,8)  AAATTT -> CCCCCC       -> First variant
+     *   Inference           ACCGGG         [5,11) TTTCCC -> ACCGGG
+     *   Inf-final              GGG         [8,11) CCC -> GGG             -> Second variant
+     *
+     * Decoding starts after the longest left-overlapping simple variant so the simple variant
+     * is kept and the retained inference variant starts after it.
+     */
+    const auto temp_dir = make_temp_dir("variant_reduce_left_trim_overlap");
+    const auto reference_fasta = temp_dir.m_path / "reference.fa";
+
+    {
+        std::ofstream ref_out(reference_fasta);
+        ref_out << ">chr1\nAAAAATTTCCCGGGAA\n";
+    }
+
+    const secondary::DecoderBase decoder(secondary::LabelSchemeType::DIPLOID);
+    secondary::VariantCallingSample vc_sample{
+            .seq_id = 0,
+            .positions_major = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15},
+            .positions_minor = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+            .logits = make_polyploid_probs(decoder.get_label_scheme_symbols(),
+                                           {"AAAAAACCGGGGGGAA", "AAAAAACCGGGGGGAA"},
+                                           {0.999999f, 0.999999f}),
+    };
+    const secondary::Variant long_simple_variant{
+            .seq_id = 0,
+            .pos = 2,
+            .ref = "AAATTT",
+            .alts = {"CCCCCC"},
+            .filter = "PASS",
+            .info = {},
+            .qual = 60.0f,
+            .genotype = {{"GT", "1/1"}, {"GQ", "60"}},
+            .rstart = 0,
+            .rend = 0,
+    };
+
+    std::vector<ChromosomeReduceData> chrom_reduce_data(1);
+    {
+        ChromosomeReduceData& data = chrom_reduce_data[0];
+        data.seq_id = 0;
+        data.seq_name = "chr1";
+        data.seq_len = 16;
+        data.progress_target = 16;
+        data.ready = true;
+        data.num_samples = 1;
+        data.variants_simple = {long_simple_variant};
+    }
+
+    std::vector<std::unique_ptr<hts_io::FastxRandomReader>> fastx_readers;
+    fastx_readers.emplace_back(std::make_unique<hts_io::FastxRandomReader>(reference_fasta));
+
+    const std::vector<std::pair<std::string, int64_t>> draft_lens{
+            {"chr1", 16},
+    };
+
+    utils::AsyncQueue<secondary::VariantCallingSample> input_queue{2};
+    utils::AsyncQueue<int64_t> output_queue{2};
+    CATCH_REQUIRE(input_queue.try_push(std::move(vc_sample)) == utils::AsyncQueueStatus::Success);
+    input_queue.terminate(utils::AsyncQueueTerminateFast::No);
+
+    std::atomic<bool> worker_terminate{false};
+    secondary::WorkerReturnStatus ret_status;
+
+    secondary::Stats stats;
+    stats.set("processed", 0.0);
+
+    worker_variant_calling_reduce(input_queue, output_queue, chrom_reduce_data, worker_terminate,
+                                  ret_status, stats, fastx_readers, false, 1, draft_lens, decoder,
+                                  {}, 30.0f, false, false, 2, 5,
+                                  secondary::VariantCandidateSource::COMPUTE);
+
+    CATCH_REQUIRE(!ret_status.exception_thrown);
+    CATCH_REQUIRE(!worker_terminate.load());
+
+    const std::vector<secondary::Variant> expected_inference_variants{
+            secondary::Variant{
+                    0, 8, "CCC", {"GGG"}, "PASS", {}, 52.161f, {{"GT", "1/1"}, {"GQ", "52"}}, 0, 3},
+    };
+    const std::vector<secondary::Variant> expected_merged_variants{
+            long_simple_variant, expected_inference_variants.front()};
+    CATCH_CHECK(chrom_reduce_data[0].variants_inference == expected_inference_variants);
+    CATCH_CHECK(chrom_reduce_data[0].variants_merged == expected_merged_variants);
+    CATCH_REQUIRE(std::size(chrom_reduce_data[0].processed_regions) == 1);
+    CATCH_CHECK(chrom_reduce_data[0].processed_regions[0].start == 0);
+    CATCH_CHECK(chrom_reduce_data[0].processed_regions[0].stop == 15);
+    CATCH_CHECK(chrom_reduce_data[0].processed_regions[0].value == 0);
+    CATCH_CHECK(std::size(output_queue) == 1);
+    CATCH_CHECK(stats.get_stats().at("processed") == 16.0);
 }
 
 CATCH_TEST_CASE(
@@ -1708,7 +1930,7 @@ CATCH_TEST_CASE(
     CATCH_CHECK(chrom_reduce_data[0].variants_merged == std::vector{expected_simple_variant});
     CATCH_REQUIRE(std::size(chrom_reduce_data[0].processed_regions) == 1);
     CATCH_CHECK(chrom_reduce_data[0].processed_regions[0].start == 4);
-    CATCH_CHECK(chrom_reduce_data[0].processed_regions[0].stop == 6);
+    CATCH_CHECK(chrom_reduce_data[0].processed_regions[0].stop == 5);
     CATCH_CHECK(chrom_reduce_data[0].processed_regions[0].value == 0);
     CATCH_CHECK(std::size(output_queue) == 1);
     CATCH_CHECK(stats.get_stats().at("processed") == 2.0);
@@ -1797,7 +2019,7 @@ CATCH_TEST_CASE(
     CATCH_CHECK(chrom_reduce_data[0].variants_merged == std::vector{simple_variant});
     CATCH_REQUIRE(std::size(chrom_reduce_data[0].processed_regions) == 1);
     CATCH_CHECK(chrom_reduce_data[0].processed_regions[0].start == 4);
-    CATCH_CHECK(chrom_reduce_data[0].processed_regions[0].stop == 6);
+    CATCH_CHECK(chrom_reduce_data[0].processed_regions[0].stop == 5);
     CATCH_CHECK(chrom_reduce_data[0].processed_regions[0].value == 0);
     CATCH_CHECK(std::size(output_queue) == 1);
     CATCH_CHECK(stats.get_stats().at("processed") == 2.0);

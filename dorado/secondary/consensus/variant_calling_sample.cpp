@@ -53,7 +53,9 @@ int64_t VariantCallingSample::end() const {
     return (std::empty(positions_major) ? -1 : (positions_major.back() + 1));
 }
 
-std::ostream& operator<<(std::ostream& os, const VariantCallingSample& vc_sample) {
+void debug_print(std::ostream& os,
+                 const secondary::VariantCallingSample& vc_sample,
+                 const bool detailed) {
     // Make sure that vectors are of the same length.
     vc_sample.validate();
 
@@ -64,21 +66,40 @@ std::ostream& operator<<(std::ostream& os, const VariantCallingSample& vc_sample
 
     // Print first the beginning and end of the positions vectors.
     constexpr int64_t START = 0;
+    constexpr int64_t MARGIN = 3;
     const int64_t len = std::ssize(vc_sample.positions_major);
-    for (int64_t k = START; k < std::min<int64_t>(START + 3, len); ++k) {
+    for (int64_t k = START; k < std::min<int64_t>(START + MARGIN, len); ++k) {
         os << "(" << vc_sample.positions_major[k] << ", " << vc_sample.positions_minor[k] << ") ";
         os.flush();
     }
     os << " ...";
     os.flush();
     const int64_t end = len;
-    for (int64_t k = std::max<int64_t>(START + 3, end - 3); k < end; ++k) {
+    for (int64_t k = std::max<int64_t>(START + MARGIN, end - MARGIN); k < end; ++k) {
         os << " (" << vc_sample.positions_major[k] << ", " << vc_sample.positions_minor[k] << ")";
         os.flush();
     }
     os << "], size = " << std::size(vc_sample.positions_major);
     os.flush();
 
+    if (detailed) {
+        os << '\n';
+        for (int64_t k = 0; k < len; ++k) {
+            os << "[k = " << k << "] major = " << vc_sample.positions_major[k]
+               << ", minor = " << vc_sample.positions_minor[k] << '\n';
+        }
+        os.flush();
+    }
+}
+
+std::string to_string(const secondary::VariantCallingSample& vc_sample, const bool detailed) {
+    std::ostringstream oss;
+    secondary::debug_print(oss, vc_sample, detailed);
+    return std::move(oss).str();
+}
+
+std::ostream& operator<<(std::ostream& os, const VariantCallingSample& vc_sample) {
+    debug_print(os, vc_sample, false);
     return os;
 }
 
@@ -138,6 +159,43 @@ VariantCallingSample slice_vc_sample(const VariantCallingSample& vc_sample,
             std::vector<int64_t>(std::begin(vc_sample.positions_minor) + idx_start,
                                  std::begin(vc_sample.positions_minor) + idx_end),
             vc_sample.logits.index({at::indexing::Slice(idx_start, idx_end)}).clone()};
+}
+
+VariantCallingSample slice_vc_sample_in_ref_coords(const VariantCallingSample& vc_sample,
+                                                   const int64_t ref_start,
+                                                   const int64_t ref_end) {
+    // Check that all members of the sample are of the same length.
+    vc_sample.validate();
+
+    if (std::empty(vc_sample.positions_major)) {
+        return vc_sample;
+    }
+
+    // Nothing to do.
+    if ((ref_start == vc_sample.start()) && (ref_end == vc_sample.end())) {
+        return vc_sample;
+    }
+
+    // Validate reference coords.
+    if ((ref_start < 0) || (ref_end < 0) || (ref_start >= ref_end) ||
+        (ref_start >= vc_sample.end()) || (ref_end > vc_sample.end())) {
+        throw std::out_of_range(
+                "Reference coordinates are out of range in slice_vc_sample_in_ref_coords. "
+                "ref_start = " +
+                std::to_string(ref_start) + ", ref_end = " + std::to_string(ref_end) +
+                ", vc_sample.start() = " + std::to_string(vc_sample.start()) +
+                ", vc_sample.end() = " + std::to_string(vc_sample.end()));
+    }
+
+    // Find where the reference coordinates actually begin in the sample.
+    const auto start_iter = std::lower_bound(std::begin(vc_sample.positions_major),
+                                             std::end(vc_sample.positions_major), ref_start);
+    const auto end_iter = std::lower_bound(std::begin(vc_sample.positions_major),
+                                           std::end(vc_sample.positions_major), ref_end);
+    const int64_t start_idx = std::distance(std::begin(vc_sample.positions_major), start_iter);
+    const int64_t end_idx = std::distance(std::begin(vc_sample.positions_major), end_iter);
+
+    return slice_vc_sample(vc_sample, start_idx, end_idx);
 }
 
 std::vector<VariantCallingSample> merge_vc_samples(

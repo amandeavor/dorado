@@ -28,6 +28,10 @@ struct VariantCallingSample {
     int64_t end() const;
 };
 
+void debug_print(std::ostream& os, const secondary::VariantCallingSample& vc_sample, bool detailed);
+
+std::string to_string(const secondary::VariantCallingSample& vc_sample, bool detailed);
+
 std::ostream& operator<<(std::ostream& os, const VariantCallingSample& vc_sample);
 
 bool operator==(const VariantCallingSample& lhs, const VariantCallingSample& rhs);
@@ -42,6 +46,19 @@ bool variant_calling_sample_less(const VariantCallingSample& lhs, const VariantC
 VariantCallingSample slice_vc_sample(const VariantCallingSample& vc_sample,
                                      int64_t idx_start,
                                      int64_t idx_end);
+
+/**
+ * \brief Slices the variant calling sample between specified reference coordinates.
+ *          Throws if coordinates are not valid.
+ * \param vc_sample Sample to trim.
+ * \param ref_start Reference start coordinate, zero based. Will be looked up in positions_major.
+ * \param ref_end   Reference end coordinate (exclusive). Will be looked up in positions_major.
+ * \returns A new VariantCallingSample object sliced between the first column matching ref_start and
+ *          last column matching (ref_end - 1).
+ */
+VariantCallingSample slice_vc_sample_in_ref_coords(const VariantCallingSample& vc_sample,
+                                                   const int64_t ref_start,
+                                                   const int64_t ref_end);
 
 /**
  * \brief Given a vector of variant calling samples, it returns a new vector of VariantCallingSample objects

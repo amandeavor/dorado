@@ -31,6 +31,7 @@
 #include <stdexcept>
 #include <string_view>
 #include <tuple>
+#include <unordered_map>
 #include <utility>
 
 #if DORADO_CUDA_BUILD
@@ -42,6 +43,7 @@
 
 // #define DEBUG_INFERENCE_DATA
 // #define DEBUG_DUMP_INFERENCE_TENSORS_TO_DISK
+constexpr bool DEBUG_VC_SAMPLES = false;
 
 #ifdef NDEBUG
 #define LOG_TRACE(...)
@@ -961,9 +963,9 @@ void worker_infer_samples_in_parallel(
 #ifdef DEBUG_INFERENCE_DATA
             {
                 std::cout << "[infer] output_device.shape = "
-                          << utils::tensor_shape_as_string(output_device) << "\n";
-                std::cout << "[infer] output_device =\n" << output_device << "\n";
-                utils::save_tensor(output_device, "debug.tensor.out.pt");
+                          << utils::tensor_shape_as_string(output_on_device) << "\n";
+                std::cout << "[infer] output_device =\n" << output_on_device << "\n";
+                utils::save_tensor(output_on_device, "debug.tensor.out.pt");
             }
 #endif
         }
@@ -1234,13 +1236,215 @@ void worker_separate_decode_data(utils::AsyncQueue<DecodeData>& input_queue,
 
 namespace {
 
-std::vector<secondary::Variant> call_variants_single_chrom(
-        const std::string& draft,
-        const std::vector<secondary::VariantCallingSample>& vc_input_data,
-        const secondary::DecoderBase& decoder,
-        const float pass_min_qual,
-        const bool ambig_ref,
-        const bool gvcf) {
+secondary::IntervalTreesInt64Map make_variant_trees(
+        const std::vector<secondary::Variant>& variants) {
+    // Create intervals.
+    std::unordered_map<int32_t, std::vector<secondary::IntervalInt64>> intervals_by_seq;
+    for (const secondary::Variant& variant : variants) {
+        const int64_t ref_end = variant_end(variant);
+        // IntervalTree stops are inclusive; the value stores the exclusive REF end.
+        intervals_by_seq[variant.seq_id].emplace_back(variant.pos, ref_end - 1, ref_end);
+    }
+
+    // Create trees from the intervals.
+    secondary::IntervalTreesInt64Map trees;
+    trees.reserve(std::size(intervals_by_seq));
+    for (auto& [seq_id, intervals] : intervals_by_seq) {
+        trees.emplace(seq_id, secondary::IntervalTreeInt64(std::move(intervals)));
+    }
+
+    return trees;
+}
+
+std::vector<secondary::IntervalInt64> make_processed_regions(
+        const std::vector<secondary::VariantCallingSample>& vc_samples,
+        const bool merge_intervals) {
+    std::vector<secondary::IntervalInt64> intervals;
+    for (const auto& vc_sample : vc_samples) {
+        const int64_t start = vc_sample.start();  // Zero-based.
+        const int64_t end = vc_sample.end() - 1;  // Exclusive.
+        if (start > end) {
+            continue;
+        }
+        intervals.emplace_back(start, end, vc_sample.seq_id);
+    }
+
+    std::sort(std::begin(intervals), std::end(intervals),
+              [](const secondary::IntervalInt64& a, const secondary::IntervalInt64& b) {
+                  return std::tie(a.value, a.start, a.stop) < std::tie(b.value, b.start, b.stop);
+              });
+
+    if (merge_intervals && !std::empty(intervals)) {
+        std::vector<secondary::IntervalInt64> merged_intervals;
+        merged_intervals.reserve(std::ssize(intervals));
+        merged_intervals.emplace_back(intervals.front());
+        for (const auto& iv : intervals) {
+            // The +1 is because .stop is inclusive, and we want to merge neighboring regions.
+            if (iv.start > (merged_intervals.back().stop + 1)) {
+                merged_intervals.emplace_back(iv);
+            }
+            merged_intervals.back().stop = std::max(merged_intervals.back().stop, iv.stop);
+        }
+        std::swap(intervals, merged_intervals);
+    } else {
+        const auto new_end = std::unique(
+                std::begin(intervals), std::end(intervals),
+                [](const secondary::IntervalInt64& a, const secondary::IntervalInt64& b) {
+                    return std::tie(a.value, a.start, a.stop) == std::tie(b.value, b.start, b.stop);
+                });
+        intervals.erase(new_end, intervals.end());
+    }
+
+    return intervals;
+}
+
+std::vector<secondary::IntervalInt64> construct_trimmed_merge_regions(
+        const std::vector<secondary::VariantCallingSample>& vc_samples,
+        const std::vector<secondary::Variant>& simple_variants,
+        const int32_t flank_trim) {
+    // Merge the processed regions. Only edges of these regions will be trimmed.
+    // Non-const to avoid Clang-tidy error: constness of 'merged_processed_regions' prevents automatic move.
+    std::vector<secondary::IntervalInt64> merged_processed_regions =
+            make_processed_regions(vc_samples, true);
+
+    // Nothing to do here.
+    const int64_t trim = std::max<int32_t>(0, flank_trim);
+    if (trim == 0) {
+        return merged_processed_regions;
+    }
+
+    // Create variant trees to find any left-flank overlaps.
+    const secondary::IntervalTreesInt64Map simple_variant_trees =
+            make_variant_trees(simple_variants);
+
+    const int32_t seq_id = vc_samples.front().seq_id;
+
+    std::vector<secondary::IntervalInt64> merge_regions;
+
+    for (const auto& iv : merged_processed_regions) {
+        // Bluntly trim the coords left/right.
+        int64_t new_start = iv.start + trim;
+        int64_t new_end = iv.stop - trim;
+
+        if (new_start > new_end) {
+            continue;
+        }
+
+        // Find any simple variants on the left side which may overlap the trimmed sample coords.
+        // Move the decode_start to the first position which doesn't overlap a simple variant.
+        if (!std::empty(simple_variants)) {
+            // Find the tree for this seq_id.
+            const auto tree_iter = simple_variant_trees.find(seq_id);
+
+            // Traverse all overlapping variants to move the new_start.
+            while ((tree_iter != std::end(simple_variant_trees)) && (new_start < new_end)) {
+                int64_t next_new_start = new_start;
+                tree_iter->second.visit_overlapping(
+                        new_start, new_start,
+                        [&new_start,
+                         &next_new_start](const secondary::IntervalInt64& variant_span) {
+                            if (variant_span.start < new_start) {
+                                // The +1 is because stop is inclusive.
+                                next_new_start = std::max(next_new_start, variant_span.stop + 1);
+                            }
+                        });
+                if (next_new_start <= new_start) {
+                    break;
+                }
+                new_start = next_new_start;
+            }
+
+            // Traverse all overlapping variants to move the new_end in case the end is partially covering
+            // a confident simple variant on the right flank.
+            while ((tree_iter != std::end(simple_variant_trees)) && (new_start < new_end)) {
+                int64_t next_new_end = new_end;
+                tree_iter->second.visit_overlapping(
+                        new_end, new_end,
+                        [&new_end, &next_new_end](const secondary::IntervalInt64& variant_span) {
+                            if (variant_span.start <= new_end) {
+                                next_new_end = std::min(next_new_end, variant_span.start - 1);
+                            }
+                        });
+                if (next_new_end >= new_end) {
+                    break;
+                }
+                new_end = next_new_end;
+            }
+
+            if (new_start > new_end) {
+                continue;
+            }
+        }
+
+        merge_regions.emplace_back(secondary::IntervalInt64(new_start, new_end, iv.value));
+    }
+
+    return merge_regions;
+}
+
+std::vector<secondary::VariantCallingSample> trim_samples_to_merge_regions(
+        const std::vector<secondary::VariantCallingSample>& vc_samples,
+        const std::vector<secondary::IntervalInt64>& merge_regions) {
+    if (std::empty(vc_samples) || std::empty(merge_regions)) {
+        return {};
+    }
+
+    // Create trees from the intervals.
+    std::vector<secondary::IntervalInt64> intervals = merge_regions;
+    const secondary::IntervalTreeInt64 tree(std::move(intervals));
+
+    std::vector<secondary::VariantCallingSample> ret;
+
+    for (const auto& sample : vc_samples) {
+        if (sample.start() >= sample.end()) {
+            continue;
+        }
+
+        // Find overlapping merge regions.
+        const std::vector<secondary::IntervalInt64> hits =
+                tree.findOverlapping(sample.start(), sample.end() - 1);
+
+        // This sample is not in any merge region, skip it.
+        if (std::empty(hits)) {
+            continue;
+        }
+
+        // Find the maximum start and minimum end coordinate of all overlapping merge regions.
+        const auto max_it_start =
+                std::max_element(std::begin(hits), std::end(hits),
+                                 [](const auto& a, const auto& b) { return a.start < b.start; });
+        const auto min_it_end =
+                std::min_element(std::begin(hits), std::end(hits),
+                                 [](const auto& a, const auto& b) { return a.stop < b.stop; });
+
+        // Find the reference clip coordinates.
+        const int64_t decode_start = std::max(max_it_start->start, sample.start());
+        const int64_t decode_end = std::min(min_it_end->stop + 1, sample.end());
+
+        if (decode_start >= decode_end) {
+            continue;
+        }
+
+        // Clip.
+        ret.emplace_back(slice_vc_sample_in_ref_coords(sample, decode_start, decode_end));
+    }
+
+    return ret;
+}
+
+std::pair<std::vector<secondary::Variant>, std::vector<secondary::IntervalInt64>>
+call_variants_single_chrom(const std::string& draft,
+                           const std::vector<secondary::VariantCallingSample>& vc_input_data,
+                           const secondary::DecoderBase& decoder,
+                           const std::vector<secondary::Variant>& simple_variants,
+                           const int32_t flank_trim,
+                           const float pass_min_qual,
+                           const bool ambig_ref,
+                           const bool gvcf) {
+    if (std::empty(vc_input_data)) {
+        return {};
+    }
+
     std::vector<int32_t> ordered_ids;
     ordered_ids.reserve(std::size(vc_input_data));
 
@@ -1263,12 +1467,51 @@ std::vector<secondary::Variant> call_variants_single_chrom(
         return {};
     }
 
+    // Debug print.
+    if constexpr (DEBUG_VC_SAMPLES == true) {
+        const int32_t seq_id = vc_input_data.front().seq_id;
+        spdlog::trace("[call_variants_single_chrom seq_id = {}] vc_input_data: size = {}", seq_id,
+                      std::size(vc_input_data));
+        for (int64_t i = 0; i < std::ssize(vc_input_data); ++i) {
+            spdlog::trace("[call_variants_single_chrom seq_id = {}]    [i = {}] {}", seq_id, i,
+                          secondary::to_string(vc_input_data[i], false));
+        }
+    }
+
     // Trim the overlapping portions between samples.
     const auto trimmed_vc_samples = secondary::trim_vc_samples(vc_input_data, ordered_ids);
 
-    // Break and merge samples on non-variant positions.
-    const auto joined_samples = join_samples(trimmed_vc_samples, draft, decoder);
+    // Debug print.
+    if constexpr (DEBUG_VC_SAMPLES == true) {
+        const int32_t seq_id = vc_input_data.front().seq_id;
+        spdlog::trace("[call_variants_single_chrom seq_id = {}] trimmed_vc_samples: size = {}",
+                      seq_id, std::size(trimmed_vc_samples));
+        for (int64_t i = 0; i < std::ssize(trimmed_vc_samples); ++i) {
+            spdlog::trace("[call_variants_single_chrom seq_id = {}]    [i = {}] {}", seq_id, i,
+                          secondary::to_string(trimmed_vc_samples[i], false));
+        }
+    }
 
+    const std::vector<secondary::IntervalInt64> merge_regions =
+            construct_trimmed_merge_regions(trimmed_vc_samples, simple_variants, flank_trim);
+
+    // Trim overlaps with simple variants.
+    const auto callable_vc_samples =
+            trim_samples_to_merge_regions(trimmed_vc_samples, merge_regions);
+
+    // Debug print.
+    if constexpr (DEBUG_VC_SAMPLES == true) {
+        const int32_t seq_id = vc_input_data.front().seq_id;
+        spdlog::trace("[call_variants_single_chrom seq_id = {}] callable_vc_samples: size = {}",
+                      seq_id, std::size(callable_vc_samples));
+        for (int64_t i = 0; i < std::ssize(callable_vc_samples); ++i) {
+            spdlog::trace("[call_variants_single_chrom seq_id = {}]    [i = {}] {}", seq_id, i,
+                          secondary::to_string(callable_vc_samples[i], false));
+        }
+    }
+
+    // Break and merge samples on non-variant positions.
+    const auto joined_samples = join_samples(callable_vc_samples, draft, decoder);
     std::vector<secondary::Variant> results;
 
     for (const auto& vc_sample : joined_samples) {
@@ -1284,7 +1527,7 @@ std::vector<secondary::Variant> call_variants_single_chrom(
     // Sort the variants.
     std::stable_sort(std::begin(results), std::end(results));
 
-    return results;
+    return {results, merge_regions};
 }
 
 std::vector<secondary::Interval64> merge_intervals(
@@ -1482,27 +1725,15 @@ void add_gvcf_reference_records_for_unprocessed_regions(
 std::vector<secondary::Variant> merge_variants(
         const std::vector<secondary::Variant>& inference_variants,
         const std::vector<secondary::Variant>& simple_variants,
-        const std::vector<secondary::IntervalInt64>& processed_regions,
-        const int32_t flank_trim) {
-    // Clip the processed regions on both ends by a few bases.
-    std::vector<secondary::IntervalInt64> intervals;
-    intervals.reserve(std::size(processed_regions));
-    for (const auto iv : processed_regions) {
-        const int64_t trimmed_start = iv.start + flank_trim;
-        const int64_t trimmed_stop = iv.stop - flank_trim - 1;
-        if (trimmed_start >= trimmed_stop) {
-            continue;
-        }
-        intervals.emplace_back(trimmed_start, trimmed_stop, iv.value);
-    }
-
+        const std::vector<secondary::IntervalInt64>& inference_regions_to_keep) {
     // Create the lookup tree for filtering.
+    std::vector<secondary::IntervalInt64> intervals = inference_regions_to_keep;
     const secondary::IntervalTreeInt64 tree = secondary::IntervalTreeInt64(std::move(intervals));
 
     std::vector<secondary::Variant> new_variants;
     new_variants.reserve(std::size(inference_variants) + std::size(simple_variants));
 
-    // Keep inference variants which are within the processed_regions.
+    // Keep inference variants which are within the inference_regions_to_keep.
     for (const secondary::Variant& var : inference_variants) {
         const std::vector<interval_tree::Interval<int64_t, int64_t>> region_hits =
                 tree.findOverlapping(var.pos, var.pos);
@@ -1512,11 +1743,13 @@ std::vector<secondary::Variant> merge_variants(
         new_variants.emplace_back(var);
     }
 
-    // Keep Kadayashi variants which are not within the processed_regions.
+    // Keep Kadayashi variants which are not within the inference_regions_to_keep.
+    // IMPORTANT: Any Kadayashi variant which overlaps inference_regions_to_keep will be removed.
     for (const secondary::Variant& var : simple_variants) {
+        const int64_t end = std::max(var.pos, secondary::variant_end(var) - 1);
         const std::vector<interval_tree::Interval<int64_t, int64_t>> region_hits =
-                tree.findOverlapping(var.pos, var.pos);
-        // IMPORTANT difference to the above block - negative test.
+                tree.findOverlapping(var.pos, end);
+        // IMPORTANT different from the above block - negative test.
         if (!std::empty(region_hits)) {
             continue;
         }
@@ -1631,9 +1864,16 @@ void worker_variant_calling_reduce(
         }
 
         std::vector<secondary::Variant> variants;
+        std::vector<secondary::IntervalInt64> merge_regions;
         if (!std::empty(vc_decode_data)) {
-            variants = call_variants_single_chrom(*draft, vc_decode_data, decoder, pass_min_qual,
-                                                  ambig_ref, gvcf);
+            const bool merge_with_simple =
+                    (variant_candidate_source == secondary::VariantCandidateSource::COMPUTE);
+            const std::vector<secondary::Variant> empty_simple_variants;
+            const auto& simple_variants =
+                    merge_with_simple ? reduce_data.variants_simple : empty_simple_variants;
+            std::tie(variants, merge_regions) = call_variants_single_chrom(
+                    *draft, vc_decode_data, decoder, simple_variants,
+                    merge_with_simple ? flank_trim : 0, pass_min_qual, ambig_ref, gvcf);
         }
 
         spdlog::debug(
@@ -1642,42 +1882,15 @@ void worker_variant_calling_reduce(
                 "reduce_data.ready = {}, reduce_data.num_samples = {}",
                 tid, seq_name, std::size(variants), reduce_data.ready, reduce_data.num_samples);
 
-        {  // Processed regions.
-            std::vector<secondary::IntervalInt64> intervals;
-            for (const auto& vc_sample : vc_decode_data) {
-                const int64_t start = vc_sample.start();
-                const int64_t end = vc_sample.end();
-                if (start >= end) {
-                    continue;
-                }
-                intervals.emplace_back(start, end, seq_id);
-            }
-
-            // Sort intervals.
-            std::sort(std::begin(intervals), std::end(intervals),
-                      [](const secondary::IntervalInt64& a, const secondary::IntervalInt64& b) {
-                          return std::tie(a.value, a.start, a.stop) <
-                                 std::tie(b.value, b.start, b.stop);
-                      });
-            // Dedup intervals.
-            const auto new_end = std::unique(
-                    std::begin(intervals), std::end(intervals),
-                    [](const secondary::IntervalInt64& a, const secondary::IntervalInt64& b) {
-                        return std::tie(a.value, a.start, a.stop) ==
-                               std::tie(b.value, b.start, b.stop);
-                    });
-            intervals.erase(new_end, intervals.end());
-            reduce_data.processed_regions = std::move(intervals);
-        }
+        reduce_data.processed_regions = make_processed_regions(vc_decode_data, false);
 
         // Store inference variants.
         reduce_data.variants_inference = std::move(variants);
 
         // Only merge variants if confident variants were computed internally.
         if (variant_candidate_source == secondary::VariantCandidateSource::COMPUTE) {
-            reduce_data.variants_merged =
-                    merge_variants(reduce_data.variants_inference, reduce_data.variants_simple,
-                                   reduce_data.processed_regions, flank_trim);
+            reduce_data.variants_merged = merge_variants(
+                    reduce_data.variants_inference, reduce_data.variants_simple, merge_regions);
         } else {
             reduce_data.variants_merged = reduce_data.variants_inference;
         }
@@ -1909,8 +2122,8 @@ void worker_variant_writer(
                     // Write the processed_regions.bed.
                     if (ofs_regions.is_open()) {
                         for (const secondary::IntervalInt64 iv : results.processed_regions) {
-                            ofs_regions << results.seq_name << '\t' << iv.start << '\t' << iv.stop
-                                        << '\n';
+                            ofs_regions << results.seq_name << '\t' << iv.start << '\t'
+                                        << (iv.stop + 1) << '\n';
                         }
                     }
 
