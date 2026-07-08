@@ -2,6 +2,30 @@
 
 All notable changes to Dorado will be documented in this file.
 
+# [2.1.0] (9 July 2026)
+
+This version of Dorado introduces performance improvements for v6.0.0 HAC models on Blackwell GPUs. Performance of v5.0.0+ SUP models has also been improved, especially for short reads. This release also contains a collection of feature improvements and bug fixes for Dorado `smallvar`, including initial gVCF support.
+
+* 9829da32bd60bed4a6b0ed1e3018e9b4941b41e2 - Update to Koi 0.7.3 with improved Blackwell performance for v6.0.0 HAC models.
+* 0917d62b8ec4cfad0a4993fa725801b83da254e9 - Add support for variable chunk size basecalling for v5.0.0 onwards SUP models, improving performance for short reads.
+* b779ea1a95f9bcba2150c0f15de58d0c73d56c0b - Improve the CPU efficiency of read splitting.
+* 4fa516401ced8fd07c10d58a5d7385be7e9393e9 - Support gVCF output from Dorado `smallvar` via the `--gvcf` option.
+* 1946d7af2925a73dde5a2629d46f2b6692442909 - Correctly report variants in Dorado `smallvar` when the reference is lower case.
+* c5a3cde517863faec9308a5e3bcc489d7e4ab129 - Sort and deduplicate processed_regions.bed file in Dorado `smallvar`.
+* 44442d1eaa46021140b7764a6ec5e3688a3577a0 - Add `--hemizygous-regions` option to Dorado `smallvar`, to specify regions in which haploid variant calls are expected.
+* 9f1166337eecf3a9968cb26953b685b65d0fefb0 - Remove duplicated fileformat header line from VCF output.
+* bd56aac1652befd5882e8c288f967060bcff8131 - Bug fix for overlapping simple variants by removing redundant allele coverage check in Dorado `smallvar`.
+* b72ad62409bd4bceddecdb5f10d0e18bc8ded0bb - Fix output of overlapping variants due to trimming of processed regions before merging.
+* 36e332a07b31d51f6a3811a594b3786825696571 - Add `--MD`, `--cs` and `--rmq` to the list of supported minimap options.
+* 7f72ddc99defa3c215a22bb37c43a05f19a83464 - No longer create a .fai index file on disk alongside alignment references.
+* ab8217e554666b080414cb5664df51e2b42b0474 - Fix `sp:i` tag to contain the correct split points in all cases when a read has been split multiple times.
+* ae09deb001853501566ef8b7877fa23878a8996c - Add support for single-ended dual barcode arrangements (two barcodes at one end of a read) and arrangements with split inter-barcode flanking regions.
+* 9ba24c50c5a950d278b101e1b50a2b6986409734 - Port the Dorado `correct` Herro model from TorchScript to Libtorch.
+* 765ea193baf9be379e1a1c73460eab95a21855c3 - Remove use of TorchScript from Dorado.
+* 7cbf1c33ede9659a65106b39594d8ce0a49690c2 - Update to minimap2 v2.31.
+* 8678916ee94c9e235409faa0f7f9176bf87fd555 - Pin POD5 version to 0.3.39.
+* 7d36a478a4160d49b386c5784b1e9fbb197e9ab2 - Fix batch size benchmarking while running LSTM models with variable chunk sizes.
+
 # [2.0.1] (15 June 2026)
 
 This version of Dorado introduces fixes and enhancements following the Dorado 2.0.0 release. Improvements include adding a `@PG ID:aligner` header line from Dorado `basecaller`, allowing Dorado `smallvar` to consume reads aligned inline with `basecaller`; preventing unnecessary poly(A) worker threads and improving poly(A) thread count determination; initial Apple Silicon implementation for v6.0.0 HAC on MacOS; pre-computed batch size benchmarks for a wider variety of GPUs; and several other fixes improving compatibility with v6.0.0 models.
