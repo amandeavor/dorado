@@ -666,8 +666,14 @@ build_archive:macos:arm:
 
 test:windows:
   extends:
-    - .windows_runner
     - .test_dorado_windows
+  tags:
+    # We currently pin to v100 runners as the results are not the same on blackwell runners.
+    - windows
+    - VS2022
+    - cuda-${CUDA}
+    - on-prem
+    - gpu-v100
   needs:
     - build:windows
 
