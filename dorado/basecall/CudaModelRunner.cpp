@@ -16,17 +16,29 @@ CudaModelRunner::CudaModelRunner(std::shared_ptr<CudaCaller> caller, size_t batc
           m_chunk_size(m_caller->chunk_size(batch_dims_idx)),
           m_stream(c10::cuda::getStreamFromPool(false, m_caller->device().index())) {
     std::tie(m_input, m_output, m_aux) = m_caller->create_input_output_tensor(batch_dims_idx);
+    if (config().is_tx_model()) {
+        // Add initial padding
+        m_first_conv_padding = m_caller->config().convs.front().winlen / 2;
+        m_chunk_offset = m_first_conv_padding;
+        m_input.slice(1, 0, m_first_conv_padding).zero_();
+    }
 }
 
 void CudaModelRunner::accept_chunk(int chunk_idx, const at::Tensor &chunk) {
     if (m_caller->variable_chunk_sizes()) {
-        m_input.index_put_({torch::indexing::Ellipsis,
-                            torch::indexing::Slice(m_chunk_offset, m_chunk_offset + chunk.size(1))},
-                           chunk);
+        // Tx VCS Input is of shape (C_in, N * T)
+        // LSTM VCS Input is of shape (1, C_in, N * T)
+        m_input.narrow(-1, m_chunk_offset, chunk.size(1)).copy_(chunk);
         m_chunk_sizes.emplace_back(chunk.size(1));
         m_chunk_offset += m_chunk_sizes.back();
+        if (config().is_tx_model()) {
+            // Pad after each chunk. Initial padding is added in CudaModelRunner constructor.
+            // m_chunk_sizes contains raw data size without padding, as padding can be inferred
+            m_input.narrow(1, m_chunk_offset, m_first_conv_padding).zero_();
+            m_chunk_offset += m_first_conv_padding;
+        }
     } else {
-        m_input.index_put_({chunk_idx, torch::indexing::Ellipsis}, chunk);
+        m_input.index_put_({chunk_idx}, chunk);
     }
 }
 
@@ -36,13 +48,15 @@ std::vector<decode::DecodedChunk> CudaModelRunner::call_chunks(int num_chunks) {
     c10::cuda::CUDAStreamGuard guard(m_stream);
     std::unique_ptr<nn::AuxiliaryData> aux;
     if (m_caller->variable_chunk_sizes()) {
-        aux = std::make_unique<nn::AuxiliaryData>(m_aux, batch_size(), chunk_size(),
-                                                  config().stride, m_chunk_sizes);
+        aux = std::make_unique<nn::AuxiliaryData>(
+                m_aux, batch_size(), chunk_size(), config().stride, config().stride_inner(),
+                config().chunk_size_granularity(), m_chunk_sizes, config().basecaller.chunk_size(),
+                config().is_tx_model());
     }
     auto decoded_chunks = m_caller->call_chunks(m_input, m_output, num_chunks, aux.get());
     if (m_caller->variable_chunk_sizes()) {
         m_chunk_sizes.clear();
-        m_chunk_offset = 0;
+        m_chunk_offset = m_first_conv_padding;
     }
     return decoded_chunks;
 }

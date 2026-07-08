@@ -58,19 +58,31 @@ std::unique_ptr<nn::AuxiliaryData> create_empty_input(at::Tensor &in,
                                                       at::Tensor &workspace,
                                                       const std::int32_t N,
                                                       const std::int32_t T,
-                                                      const std::int32_t C,
-                                                      const std::int32_t stride,
+                                                      const config::BasecallModelConfig &config,
                                                       nn::KoiThreads &thread_pool) {
-    in = torch::empty({1, C, N * T}, in_options);
-    auto workspace_options =
-            at::TensorOptions().device(torch::kCPU).pinned_memory(true).dtype(torch::kInt32);
-    // for workspace size see koi/utils_lstm.h
-    workspace = torch::empty({6 * ((T / stride) + 3) * N}, workspace_options);
-    auto aux = std::make_unique<nn::AuxiliaryData>(workspace, N, T, stride,
-                                                   std::vector<std::int32_t>(N, T));
-    aux->create_lstm_auxiliary_data(in_options.device(), thread_pool);  // CPU work + async copy
-    aux->create_convolution_auxiliary_data(in_options.device());        // sync copy
-    aux->create_decoder_auxiliary_data(in_options.device());            // sync copy
+    const std::int32_t C = config.num_features;
+    const std::int32_t stride_out = config.stride;
+    const std::int32_t stride_in = config.stride_inner();
+    const std::int32_t chunk_size_granularity = config.chunk_size_granularity();
+    const std::int32_t max_chunk_size = config.basecaller.chunk_size();
+    const bool is_tx_model = config.is_tx_model();
+    if (is_tx_model) {
+        const int first_conv_padding = config.convs[0].winlen / 2U;
+        assert((T % chunk_size_granularity) == 0);
+        in = torch::empty({C, (N * T) + (N * (T / chunk_size_granularity) * first_conv_padding)},
+                          in_options);
+    } else {
+        in = torch::empty({1, C, N * T}, in_options);
+        auto workspace_options =
+                at::TensorOptions().device(torch::kCPU).pinned_memory(true).dtype(torch::kInt32);
+        // for workspace size see koi/utils_lstm.h
+        workspace = torch::empty({6 * ((T / stride_out) + 3) * N}, workspace_options);
+    }
+
+    auto aux = std::make_unique<nn::AuxiliaryData>(
+            workspace, N, T, stride_out, stride_in, chunk_size_granularity,
+            std::vector<std::int32_t>(N, T), max_chunk_size, is_tx_model);
+    aux->create_auxiliary_data(in_options.device(), thread_pool);
     return aux;
 }
 
@@ -139,7 +151,7 @@ CudaCaller::CudaCaller(const BasecallerCreationParams &params)
     at::InferenceMode guard;
     m_module = load_crf_model(params.model_config, m_options);
 
-    determine_batch_dims(params);
+    determine_batch_dims(params, m_variable_chunk_sizes);
 
     auto [crfmodel_bytes_per_ct, decode_bytes_per_ct] = calculate_memory_requirements(m_config);
 
@@ -157,7 +169,7 @@ CudaCaller::CudaCaller(const BasecallerCreationParams &params)
         std::unique_ptr<nn::AuxiliaryData> aux;
         if (m_variable_chunk_sizes) {
             aux = create_empty_input(input, m_options, workspace, batch_dim.N, batch_dim.T_in,
-                                     m_num_input_features, m_config.stride, m_thread_pool);
+                                     m_config, m_thread_pool);
         } else {
             input = torch::empty({batch_dim.N, m_num_input_features, batch_dim.T_in}, m_options);
         }
@@ -249,10 +261,7 @@ std::vector<decode::DecodedChunk> CudaCaller::call_chunks(at::Tensor &input,
     at::Tensor device_input = input.to(m_options.device());  // async copy
 
     if (aux) {
-        aux->create_lstm_auxiliary_data(m_options.device(),
-                                        m_thread_pool);              // CPU work + async copy
-        aux->create_convolution_auxiliary_data(m_options.device());  // sync copy
-        aux->create_decoder_auxiliary_data(m_options.device());      // sync copy
+        aux->create_auxiliary_data(m_options.device(), m_thread_pool);
     }
 
     auto &task_queue = get_task_queue();
@@ -309,11 +318,18 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> CudaCaller::create_input_output_t
     int64_t output_bytes = 3 * N * T_out;
     auto storage = torch::empty({std::max(input_bytes, output_bytes)}, opts.dtype(torch::kInt8));
     if (m_variable_chunk_sizes) {
-        at::Tensor input =
-                storage.slice(0, 0, input_bytes).view(scalar_type).view({1, C_in, N * T_in});
+        auto input = storage.slice(0, 0, input_bytes).view(scalar_type).view({C_in, N * T_in});
+        std::int64_t aux_size;
+        if (m_config.is_tx_model()) {
+            // Tx AuxiliaryData worse-case scenario is if all chunks are of chunk_size_granularity
+            // 2 for chunk_table, 3 for luts, all being int32
+            aux_size = 5 * (N * (T_in / m_config.chunk_size_granularity()));
+        } else {
+            input = input.unsqueeze(0);
+            // for workspace size see koi/utils_lstm.h
+            aux_size = 6 * (T_out + 3) * N;
+        }
         at::Tensor output = storage.slice(0, 0, output_bytes);
-        // for workspace size see koi/utils_lstm.h
-        const std::int64_t aux_size = 6 * (T_out + 3) * N;
         at::Tensor aux = torch::empty({aux_size}, opts.dtype(torch::kInt32));
         return {input, output, aux};
     }
@@ -334,9 +350,11 @@ int CudaCaller::get_max_safe_batch_size(c10::Device device,
                                         const config::BasecallModelConfig &model_config) {
     const int requested_batch_size = 0;       // Determine limit for us.
     const auto pipeline_type = std::nullopt;  // Don't add extra chunk sizes.
-    auto max_batch_sizes = calculate_batch_sizes(device, memory_limit_fraction, model_config,
-                                                 pipeline_type, requested_batch_size)
-                                   .max_batch_sizes;
+    const bool variable_chunk_sizes = false;  // Doesn't matter when determining max_safe_batch_size
+    auto max_batch_sizes =
+            calculate_batch_sizes(device, memory_limit_fraction, model_config, pipeline_type,
+                                  requested_batch_size, variable_chunk_sizes)
+                    .max_batch_sizes;
     // We should only have the one result since we didn't request the extra chunk sizes.
     if (max_batch_sizes.size() != 1) {
         throw std::logic_error(fmt::format("Unexpected count of sizes for {}", device.str()));
@@ -398,7 +416,8 @@ CudaCaller::BatchDimsAndMaxSizes CudaCaller::calculate_batch_sizes(
         float memory_limit_fraction,
         const config::BasecallModelConfig &model_config,
         std::optional<PipelineType> pipeline_type,
-        int requested_batch_size) {
+        int requested_batch_size,
+        bool variable_chunk_sizes) {
     c10::cuda::CUDAGuard device_guard(device);
     c10::cuda::CUDACachingAllocator::emptyCache();
     const int batch_granularity = get_batch_size_granularity(model_config);
@@ -422,6 +441,7 @@ CudaCaller::BatchDimsAndMaxSizes CudaCaller::calculate_batch_sizes(
     // we don't use extra chunk sizes for duplex. Similarly, for the low latency use case
     // (adaptive sampling) we only want one (short) chunk size so that all those reads go into
     // the same queue and complete as fast as possible.
+
     if (pipeline_type == PipelineType::simplex) {
         const char *env_extra_chunk_sizes = std::getenv("DORADO_EXTRA_CHUNK_SIZES");
         if (env_extra_chunk_sizes != nullptr) {
@@ -431,7 +451,7 @@ CudaCaller::BatchDimsAndMaxSizes CudaCaller::calculate_batch_sizes(
                 T_outs.insert(calculate_T_out(std::atoi(env_string.c_str() + start)));
                 end = env_string.find(SEPARATOR, start);
             }
-        } else {
+        } else if (!(variable_chunk_sizes && model_config.is_tx_model())) {
             // Use other chunk sizes as a fraction of the requested one
             // TODO: determine the best set of chunk sizes
             for (float fraction : {0.5f}) {
@@ -497,11 +517,12 @@ CudaCaller::BatchDimsAndMaxSizes CudaCaller::calculate_batch_sizes(
     return result;
 }
 
-void CudaCaller::determine_batch_dims(const BasecallerCreationParams &params) {
+void CudaCaller::determine_batch_dims(const BasecallerCreationParams &params,
+                                      bool variable_chunk_sizes) {
     const int requested_batch_size = m_config.basecaller.batch_size();
     auto [batch_dims, max_batch_sizes] =
             calculate_batch_sizes(m_options.device(), params.memory_limit_fraction, m_config,
-                                  m_pipeline_type, requested_batch_size);
+                                  m_pipeline_type, requested_batch_size, variable_chunk_sizes);
     m_batch_dims = std::move(batch_dims);
 
     if (requested_batch_size != 0 || max_batch_sizes.empty()) {
@@ -564,12 +585,16 @@ void CudaCaller::determine_batch_dims(const BasecallerCreationParams &params) {
             std::unique_ptr<nn::AuxiliaryData> aux;
             if (m_variable_chunk_sizes) {
                 aux = create_empty_input(input, m_options, workspace, batch_size, chunk_size,
-                                         m_config.num_features, stride, m_thread_pool);
+                                         m_config, m_thread_pool);
             } else {
                 input = torch::empty({batch_size, m_config.num_features, chunk_size}, m_options);
             }
 
             for (int i = 0; i < 2; ++i) {  // run twice to eliminate outliers
+                if (m_variable_chunk_sizes) {
+                    // Need to reset this for the second run as TxModel may update it
+                    aux->set_chunk_size_granularity(m_config.chunk_size_granularity());
+                }
                 using utils::handle_cuda_result;
                 cudaEvent_t start, stop;
                 handle_cuda_result(cudaEventCreate(&start));
@@ -584,7 +609,7 @@ void CudaCaller::determine_batch_dims(const BasecallerCreationParams &params) {
                 time = std::min(time, time_this_iteration);
                 handle_cuda_result(cudaEventDestroy(start));
                 handle_cuda_result(cudaEventDestroy(stop));
-                if (aux) {
+                if (aux && aux->is_lstm_or_flstm_model()) {
                     aux->restore_convolution_auxiliary_data();
                 }
                 spdlog::trace("Auto batchsize {}: iteration:{}, ms/chunk {:8f} ms", m_device, i,

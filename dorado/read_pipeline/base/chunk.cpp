@@ -106,4 +106,47 @@ std::vector<std::pair<std::size_t, std::size_t>> generate_variable_chunks(
     return intervals;
 }
 
+std::vector<std::pair<std::size_t, std::size_t>> generate_variable_chunks_tx(
+        const std::size_t num_samples,
+        const std::size_t max_chunk_size,
+        const std::size_t stride,
+        const std::size_t chunk_size_granularity,
+        const std::size_t overlap) {
+    if (num_samples == 0) {
+        throw std::runtime_error("utils::generate_chunks: empty read");
+    }
+    if (stride == 0) {
+        throw std::logic_error("utils::generate_chunks: invalid stride " + std::to_string(stride));
+    }
+    if ((chunk_size_granularity == 0) || ((chunk_size_granularity % stride) != 0)) {
+        throw std::logic_error("utils::generate_chunks: invalid chunk_size_granularity " +
+                               std::to_string(chunk_size_granularity) + " with stride " +
+                               std::to_string(stride));
+    }
+    if ((max_chunk_size == 0) || ((max_chunk_size % stride) != 0) || (max_chunk_size <= overlap) ||
+        ((max_chunk_size % chunk_size_granularity) != 0)) {
+        throw std::logic_error("utils::generate_chunks: invalid chunk size " +
+                               std::to_string(max_chunk_size) + " with overlap " +
+                               std::to_string(overlap) + " and stride " + std::to_string(stride) +
+                               " and chunk_size_granularity " +
+                               std::to_string(chunk_size_granularity));
+    }
+
+    std::vector<std::pair<std::size_t, std::size_t>> intervals;
+    std::size_t offset = 0;
+    const std::size_t chunk_step = max_chunk_size - overlap;
+
+    while ((offset + max_chunk_size) < num_samples) {
+        intervals.emplace_back(offset, offset + max_chunk_size);
+        offset += chunk_step;
+    }
+
+    // This will get padded to batch_size_granularity in BasecallerNode::basecall_worker_thread
+    if (offset != num_samples) {
+        intervals.emplace_back(offset, num_samples);
+    }
+
+    return intervals;
+}
+
 }  // namespace dorado::utils

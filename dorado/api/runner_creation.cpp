@@ -44,7 +44,17 @@ bool check_variable_chunk_sizes_supported(
         return (model_config.lstm_size == 1024) && (model_config.lstm_inner_dim.value() == 128);
     }
     if (model_config.is_tx_model()) {
-        return false;
+        if (std::any_of(std::cbegin(device_ids), std::cend(device_ids),
+                        [](const int device_id) { return !nn::koi_can_run_tx_vcs(device_id); })) {
+            return false;
+        }
+        auto& params = model_config.tx->tx;
+        // TODO: Need a better way to recognise SUP
+        const bool is_sup_model = (params.d_model == 512) && (params.nhead == 8) &&
+                                  (params.attn_window.first == 127) &&
+                                  (params.attn_window.second == 128) &&
+                                  (params.dim_feedforward == 2048);
+        return is_sup_model;
     }
 #endif
     return false;

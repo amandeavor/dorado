@@ -10,7 +10,8 @@
 namespace dorado::utils {
 
 void stitch_chunks(ReadCommon& read_common, std::span<const Chunk*> called_chunks) {
-    assert(static_cast<int>(div_round_closest(called_chunks[0]->raw_chunk_size,
+    assert(static_cast<int>(div_round_closest(pad_to(called_chunks[0]->raw_chunk_size,
+                                                     called_chunks[0]->chunk_size_granularity),
                                               called_chunks[0]->moves.size())) ==
            read_common.attributes.model_stride);
 

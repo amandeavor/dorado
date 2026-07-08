@@ -116,6 +116,14 @@ ConvStackImpl::ConvStackImpl(const std::vector<config::ConvParams> &layer_params
                             .padding(layer.params.winlen / 2);
         layer.conv = register_module(std::string("conv") + std::to_string(i + 1),
                                      torch::nn::Conv1d(opts));
+#if DORADO_CUDA_BUILD
+        // I can't instantiate conv_output here because Model creation happens before AuxiliaryData creation
+        layer.conv_layer_num = i;
+        // Last layer has default next_layer_padding = 0, intentionally, input to tx encoder is not padded
+        if (i > 0) {
+            layers[i - 1].next_layer_padding = (layer.params.winlen / 2);
+        }
+#endif  // DORADO_CUDA_BUILD
     }
 }
 
@@ -127,17 +135,16 @@ void ConvStackImpl::reserve_working_memory(WorkingMemory &wm,
         throw std::runtime_error("Empty Koi convolution stack.");
     }
     auto &last = layers.back();
-    last.output_layout =
-            output_layout.has_value()
-                    ? output_layout.value()
-                    : get_koi_lstm_input_layout(last.params.size, last.params.inner_dim,
-                                                last.params.activation);
+    auto &lp = last.params;
+    last.output_layout = output_layout.has_value()
+                                 ? output_layout.value()
+                                 : get_koi_lstm_input_layout(lp.size, lp.inner_dim, lp.activation);
 
     last.cutlass_conv = utils::get_dev_opt<bool>("cutlass_conv", true) &&
                         (last.output_layout == TensorLayout::CUTLASS_TNC_I8 ||
                          last.output_layout == TensorLayout::CUTLASS_TNC_F16);
     if (last.cutlass_conv && layers.size() >= 2) {
-        layers[layers.size() - 2].output_T_padding = last.params.winlen / 2;
+        layers[layers.size() - 2].output_T_padding = lp.winlen / 2;
     }
     for (auto &layer : layers) {
         layer.reserve_working_memory(wm, aux);
@@ -148,6 +155,13 @@ void ConvStackImpl::run_koi(WorkingMemory &wm, const AuxiliaryData *const aux) {
     for (auto &layer : layers) {
         layer.run_koi(wm, aux);
     }
+}
+
+at::Tensor ConvStackImpl::run_koi_vcs_tx(at::Tensor x, AuxiliaryData *const aux) {
+    for (auto &layer : layers) {
+        x = layer.run_koi_vcs_tx(x, aux);
+    }
+    return x;
 }
 #endif  // if DORADO_CUDA_BUILD
 
@@ -356,6 +370,90 @@ void ConvStackImpl::ConvLayer::run_koi(WorkingMemory &wm, const AuxiliaryData *c
                          int(conv_out.size(1)));
         }
     }
+}
+
+at::Tensor ConvStackImpl::ConvLayer::run_koi_vcs_tx(at::Tensor &conv_input,
+                                                    AuxiliaryData *const aux) {
+    // Implementation supposes chunk_table remains unchanged since entering ConvStack
+    // Eg: S | L            S = Start, L = Length
+    //     0 | 768
+    //   768 | 768*4
+    // 768*5 | 768*2
+    // Also expecting chunk_table.shape = (num_varlen_chunks, 2). Linearised = [[S, L], [S, L], [S, L], ...]
+    // This can of course be changed
+
+    auto stream = at::cuda::getCurrentCUDAStream().stream();
+    utils::ScopedProfileRange spr("conv", 2);
+    auto opts_f16 = conv_input.options().dtype(torch::kF16);
+
+    const int winlen = params.winlen;
+    const int padding = (winlen / 2);
+    const int C_in = params.insize;
+    const int C_out = params.size;
+    const int stride = params.stride;
+    // The very first conv layer's shape is (C_in, N * T) The rest are (C_in / 8, N * T, 8)
+    const int M_input = conv_input.size(1);
+
+    // First convolution always accumulates in fp16
+    const bool use_f32_accum =
+            (conv_layer_num > 0) && utils::get_dev_opt<bool>("koi_tx_vcs_conv_f32_accum", false);
+
+    if (!w_device.defined()) {
+        // conv->weight is [C_out, C_in, W], we want [C_out, W, C_in] and then further tiling
+        w_device = conv->weight.transpose(1, 2).contiguous().to(opts_f16);
+
+        // Special tiling for first Conv
+        if (conv_layer_num == 0) {
+            w_device = w_device.view({C_out / 2, 2, winlen * C_in}).transpose(1, 2).contiguous();
+        } else {
+            // Last layer needs to tile OUTSIZE, too big to fit in SMEM
+            const int SMEM_N = (conv_layer_num == 4) ? 128 : C_out;
+            w_device =
+                    w_device.view({C_out / SMEM_N, SMEM_N / 16, 2, 8, (winlen * C_in) / 16, 2, 8})
+                            .permute({0, 4, 1, 2, 5, 3, 6})
+                            .contiguous();
+        }
+        b_device = conv->bias.to(opts_f16);
+    }
+
+    M_out = M_input;
+    if (stride > 1) {
+        // Input has padding, we can divide by stride for output, but must make sure we
+        // we make M_out big enough to accommodate "worse-case" max amount of padding
+        // given CudaCaller's N * T. This "max amount of padding" scenario is when
+        // all of N * T is filled with chunk_size_granularity chunks.
+        // You can do the math, and even then, it is 0.5% of M_input, while stride would
+        // reduce it at least 50%, so worth doing
+
+        if (conv_layer_num != 4) {
+            M_out = (M_out / stride) + (aux->max_num_granularity() * next_layer_padding);
+        } else {
+            M_out = aux->qkv_rope_lut.size(0) * aux->chunk_size_granularity_tx_enc();
+        }
+    }
+    if (conv_output.numel() < M_out * C_out) {
+        conv_output = torch::empty({M_out * C_out}, opts_f16);
+    }
+
+    koi_vcs_tx_fill_conv_load_store_lut(
+            stream, aux->total_num_varlen_chunks(), aux->device_chunk_table.data_ptr<int>(),
+            // It makes sense for Load and Store LUTs to be in AuxiliaryData, as their
+            // shape depend on total_num_granularity, which changes between batches
+            aux->conv_load_lut.data_ptr<int>(), aux->conv_store_lut.data_ptr<int>(),
+            conv_layer_num == 0 ? nullptr : conv_input.data_ptr(), M_input, C_in,
+            aux->chunk_size_granularity(), stride, padding, next_layer_padding);
+
+    koi_vcs_tx_cnn(stream, conv_layer_num, conv_input.data_ptr(), w_device.data_ptr(),
+                   conv_output.data_ptr(), b_device.data_ptr(), aux->conv_load_lut.data_ptr<int>(),
+                   aux->conv_store_lut.data_ptr<int>(), aux->total_num_granularity(), M_input,
+                   M_out, winlen, C_in, C_out, padding, stride, use_f32_accum);
+
+    // `chunk_size_granularity` needs to be updated according to convolution stride
+    aux->apply_stride_to_chunk_size_granularity(stride);
+
+    // Doesn't really need to be in Koi Layout, BUT, if you decide to change it,
+    // you must also change TxModules.cpp, as it gets C from THIS layout!
+    return conv_output.slice(0, 0, M_out * C_out).view({C_out / 8, M_out, 8});
 }
 
 #endif  // if DORADO_CUDA_BUILD

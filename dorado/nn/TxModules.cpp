@@ -413,7 +413,9 @@ void TxEncoderImpl::remove_bits() {
 }
 #endif
 
-void TxEncoderImpl::koi_forward(utils::ScaledTensor &scaled_tensor, at::Tensor &x_f16) {
+void TxEncoderImpl::koi_forward(utils::ScaledTensor &scaled_tensor,
+                                at::Tensor &x_f16,
+                                [[maybe_unused]] AuxiliaryData *const aux) {
     (void)scaled_tensor;
     (void)x_f16;
 #if DORADO_CUDA_BUILD
@@ -464,6 +466,11 @@ void TxEncoderImpl::koi_forward(utils::ScaledTensor &scaled_tensor, at::Tensor &
         //Rotary embedding as a torch tensor
         auto rot_bfrs = self_attn->rotary_emb->named_buffers();
         auto max_T = 16 * (rot_bfrs["sin_freqs"].size(0) / 16);
+        if (aux && (max_T < aux->max_chunk_size_tx_enc())) {
+            throw std::runtime_error(
+                    "seq_length of pre-computed sincos RoPE buffers is not big enough to "
+                    "accommodate requested chunk_size");
+        }
         sincos_bfr = torch::empty({max_T, D / 2, 2}, f16_opts);
         sincos_bfr.select(2, 0) = rot_bfrs["sin_freqs"].slice(0, 0, max_T).view({max_T, D / 2});
         sincos_bfr.select(2, 1) = rot_bfrs["cos_freqs"].slice(0, 0, max_T).view({max_T, D / 2});
@@ -543,7 +550,8 @@ void TxEncoderImpl::koi_forward(utils::ScaledTensor &scaled_tensor, at::Tensor &
     KoiTensorExt fc2_out_mn(t_fc2_out.flatten(0, 1), {'M', 'N', 'm', 'n'});
     KoiTensorExt fc2_out_ntc(t_fc2_out, {'N', 'T', 'C', 't', 'c'});
 
-    KoiTensorExt sincos(sincos_bfr.slice(0, 0, T / 16), {'T', 'D', 't', 'd'});
+    KoiTensorExt sincos(sincos_bfr.slice(0, 0, (aux ? aux->max_chunk_size_tx_enc() : T) / 16),
+                        {'T', 'D', 't', 'd'});
     KoiTensorExt proj_w(proj_weight, {'N', 'K', 'n', 'k'});
     KoiTensorExt proj_b(proj_bias, {'N'});
 
@@ -552,13 +560,19 @@ void TxEncoderImpl::koi_forward(utils::ScaledTensor &scaled_tensor, at::Tensor &
     if (res == KOI_SUCCESS && ++calls) {
         // Fused QKV Matmul Plus Rotary embedding
         utils::ScopedProfileRange spr("QKV+ROTE", 3);
-        res = koi_qkv_rotary(stream, &in, &weights_qkv, &sincos, &out_qkv, nullptr,
+        res = koi_qkv_rotary(stream, &in, &weights_qkv, &sincos, &out_qkv,
+                             aux ? aux->qkv_rope_lut.data_ptr<int>() : nullptr,
                              ctr[0].data_ptr<int>());
     }
     if (res == KOI_SUCCESS && ++calls) {
-        // Apply masket attention
+        // Apply masked attention
         utils::ScopedProfileRange spr("MEA", 3);
-        res = koi_masked_attention(stream, win_upper, win_lower, &out_qkv, &out_attn);
+        if (aux) {
+            res = koi_vcs_attn(stream, qkv.data_ptr(), aux->device_chunk_table.data_ptr<int>(),
+                               aux->total_num_varlen_chunks(), t_out_attn.data_ptr());
+        } else {
+            res = koi_masked_attention(stream, win_upper, win_lower, &out_qkv, &out_attn);
+        }
     }
     if (res == KOI_SUCCESS && ++calls) {
         // Koi linear matmul
@@ -819,24 +833,69 @@ TxEncoderStackImpl::TxEncoderStackImpl(const TxEncoderParams &params,
     use_i8 = utils::get_dev_opt<bool>("koi_use_i8", true);
 };
 
-at::Tensor TxEncoderStackImpl::forward(const at::Tensor &x) {
+at::Tensor TxEncoderStackImpl::forward(const at::Tensor &x, [[maybe_unused]] AuxiliaryData *aux) {
 #if DORADO_CUDA_BUILD
     if (use_koi_tiled) {
-        const int N = static_cast<int>(x.size(0));
-        const int T = static_cast<int>(x.size(1));
-        const int C = static_cast<int>(x.size(2));
+        int N, T, C;
+        if (aux) {
+            // N = total amount of chunk_size_granularity within batch
+            // T = chunk_size_granularity which is min_chunksize / ConvStack_stride
+            N = aux->total_num_granularity();
+            T = aux->chunk_size_granularity_tx_enc();
+            C = static_cast<int>(x.size(0) *
+                                 x.size(2));  // Underlying input layout is (C / 8, M_in, 8)
+
+            // Why do this? Koi's linear.cu MatMulOp implementation requires M to be a multiple of 256
+            int p = 256 / T;
+            N += ((N % p) == 0) ? 0 : (p - (N % p));
+            if (N > aux->max_num_granularity()) {
+                throw std::runtime_error(
+                        "Tx Encoder total_num_granularity is exceeding "
+                        "max_num_granularity\n"
+                        "total_num_granularity = " +
+                        std::to_string(aux->total_num_granularity()) +
+                        ", max_num_granularity = " + std::to_string(aux->max_num_granularity()));
+            }
+            assert(T == 64);
+
+            auto stream = at::cuda::getCurrentCUDAStream().stream();
+            koi_vcs_tx_fill_qkv_rope_lut(stream, aux->total_num_varlen_chunks(), T,
+                                         aux->device_chunk_table.data_ptr<int>(),
+                                         aux->qkv_rope_lut.data_ptr<int>());
+        } else {
+            N = static_cast<int>(x.size(0));
+            T = static_cast<int>(x.size(1));
+            C = static_cast<int>(x.size(2));
+        }
 
         at::Tensor tiled_f16;
         {
             utils::ScopedProfileRange spr("Tile F16", 2);
-            tiled_f16 = x.view({N, T / 16, 16, C / 8, 8}).transpose(2, 3).contiguous();
+            if (aux) {
+                // Underlying input layout is (C / 8, M_in, 8)
+                tiled_f16 = x.narrow(1, 0, N * T)
+                                    .view({C / 8, N, T / 16, 16, 8})
+                                    .permute({1, 2, 0, 3, 4})
+                                    .contiguous();
+            } else {
+                tiled_f16 = x.view({N, T / 16, 16, C / 8, 8}).transpose(2, 3).contiguous();
+            }
         }
 
         utils::ScaledTensor scaled_tensor;
         if (use_i8) {
             utils::ScopedProfileRange spr("Quantise/tile I8", 2);
             // Quanitze tensor to i8 and take the reciprocal of the scale.
-            scaled_tensor = utils::quantize_tensor(x, 2);
+            if (aux) {
+                scaled_tensor = utils::quantize_tensor(x.narrow(1, 0, N * T)
+                                                               .view({C / 8, N * T, 8})
+                                                               .transpose(0, 1)
+                                                               .contiguous()
+                                                               .view({N * T, C}),
+                                                       1);
+            } else {
+                scaled_tensor = utils::quantize_tensor(x, 2);
+            }
             scaled_tensor.scale.reciprocal_();
             // Transform the tensor into the tiled format.
             scaled_tensor.t =
@@ -846,7 +905,7 @@ at::Tensor TxEncoderStackImpl::forward(const at::Tensor &x) {
         }
 
         for (auto &layer : layer_vec) {
-            layer->koi_forward(scaled_tensor, tiled_f16);
+            layer->koi_forward(scaled_tensor, tiled_f16, aux);
         }
 
         at::Tensor untiled_f16;

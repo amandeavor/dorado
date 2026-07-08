@@ -1,5 +1,6 @@
 #pragma once
 
+#include "AuxiliaryData.h"
 #include "config/BasecallModelConfig.h"
 #include "nn/RMSNorm.h"
 #include "torch_utils/tensor_utils.h"
@@ -97,7 +98,7 @@ struct TxEncoderImpl : torch::nn::Module {
 
     at::Tensor forward(at::Tensor x);
 
-    void koi_forward(utils::ScaledTensor &scaled_tensor, at::Tensor &x_f16);
+    void koi_forward(utils::ScaledTensor &scaled_tensor, at::Tensor &x_f16, AuxiliaryData *aux);
     void koi_volta_forward(at::Tensor &x_f16);
 
     config::TxEncoderParams params;
@@ -119,11 +120,12 @@ TORCH_MODULE(TxEncoder);
 struct TxEncoderStackImpl : torch::nn::Module {
     TxEncoderStackImpl(const config::TxEncoderParams &params, const at::TensorOptions &options);
 
-    at::Tensor forward(const at::Tensor &x);
+    at::Tensor forward(const at::Tensor &x, AuxiliaryData *aux);
 
     bool use_koi_tiled{false};
     bool use_koi_volta_tiled{false};
     bool use_i8{false};
+    bool use_vcs{false};
     torch::nn::Sequential stack{nullptr};
     std::vector<TxEncoder> layer_vec;
 };

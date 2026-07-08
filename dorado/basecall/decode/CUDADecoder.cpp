@@ -36,11 +36,19 @@ DecodeData CUDADecoder::beam_search_part_1(DecodeData data) const {
     at::Tensor chunks;
     at::Tensor chunk_results;
     if (data.aux) {
-        const std::int32_t N_ = std::max<std::int32_t>(N, data.aux->N() * 4);
+        std::int32_t N_;
+        if (data.aux->is_lstm_or_flstm_model()) {
+            N_ = std::max<std::int32_t>(N, data.aux->N() * 4);
+        } else {
+            // N IS TOTAL_NUM_VARLEN_CHUNKS
+            N_ = N;
+            data.aux->device_chunk_table.floor_divide_(data.aux->stride_out());
+        }
         chunks = at::empty({N_, 4}, tensor_options_int32);
-        chunks.index({at::indexing::Slice(0, N), 0}) = data.aux->device_chunk_offsets;
-        chunks.index({at::indexing::Slice(0, N), 2}) = data.aux->device_chunk_offsets;
-        chunks.index({at::indexing::Slice(0, N), 1}) = data.aux->device_chunk_sizes;
+        auto chunks_slice = chunks.slice(0, 0, N);
+        auto chunk_table_slice = data.aux->device_chunk_table.slice(0, 0, N);
+        chunks_slice.slice(1, 0, 2).copy_(chunk_table_slice);
+        chunks_slice.select(1, 2).copy_(chunk_table_slice.select(1, 0));
         chunks.index({at::indexing::Slice(0, N), 3}) = 0;
         chunk_results = at::empty({N_, 8}, tensor_options_int32);
     } else {
@@ -58,11 +66,22 @@ DecodeData CUDADecoder::beam_search_part_1(DecodeData data) const {
     at::Tensor path;
     at::Tensor moves_sequence_qstring;
     if (data.aux) {
-        const std::int32_t T_ = data.aux->NT_out_max();
-        const std::int32_t Ts_ = std::max<std::int32_t>(T_ + (data.aux->N() * 4), T + N);
-        aux = at::empty(Ts_ * (C + 4 * options.beam_width), tensor_options_int8);
-        path = at::zeros(Ts_, tensor_options_int32);
-        moves_sequence_qstring = at::zeros({3, T_}, tensor_options_int8);
+        if (data.aux->is_lstm_or_flstm_model()) {
+            // lstm VCS
+            const std::int32_t T_ = data.aux->NT_out_max();
+            const std::int32_t Ts_ = std::max<std::int32_t>(T_ + (data.aux->N() * 4), T + N);
+            aux = at::empty(Ts_ * (C + 4 * options.beam_width), tensor_options_int8);
+            path = at::zeros(Ts_, tensor_options_int32);
+            moves_sequence_qstring = at::zeros({3, T_}, tensor_options_int8);
+        } else {
+            // Tx VCS
+            aux = at::empty(
+                    data.aux->total_num_granularity() * (T + 1) * (C + 4 * options.beam_width),
+                    tensor_options_int8);
+            path = at::zeros(data.aux->total_num_granularity() * (T + 1), tensor_options_int32);
+            moves_sequence_qstring =
+                    at::zeros({3, data.aux->total_num_granularity() * T}, tensor_options_int8);
+        }
     } else {
         aux = at::empty(N * (T + 1) * (C + 4 * options.beam_width), tensor_options_int8);
         path = at::zeros(N * (T + 1), tensor_options_int32);
@@ -106,7 +125,6 @@ DecodeData CUDADecoder::beam_search_part_1(DecodeData data) const {
                 sequence.data_ptr(), qstring.data_ptr(), options.q_scale, options.q_shift,
                 int(options.beam_width), options.beam_cut, options.blank_score, options.move_pad));
     }
-
     if (data.aux) {
         data.data = moves_sequence_qstring;
     } else {
@@ -126,6 +144,7 @@ std::vector<DecodedChunk> CUDADecoder::beam_search_part_2(const DecodeData &data
 
     std::vector<DecodedChunk> called_chunks;
 
+    // N = total_num_varlen_chunks for Tx VCS too
     if (data.aux) {
         const std::span<const std::int32_t> chunk_sizes(data.aux->chunk_sizes());
         const std::int32_t N = std::ssize(chunk_sizes);

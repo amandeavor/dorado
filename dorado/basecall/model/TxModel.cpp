@@ -17,16 +17,23 @@ TxModelImpl::TxModelImpl(const config::BasecallModelConfig &config,
     crf = register_module("crf", nn::LinearScaledCRF(config.tx->crf));
 }
 
-at::Tensor TxModelImpl::forward(const at::Tensor &chunk_NCT, nn::AuxiliaryData *const) {
+at::Tensor TxModelImpl::forward(const at::Tensor &input, nn::AuxiliaryData *const aux) {
     at::Tensor h;
     {
         utils::ScopedProfileRange spr("Conv", 1);
-        // Returns: NTC
-        h = convs->forward(chunk_NCT);
+#if DORADO_CUDA_BUILD
+        if (aux) {
+            h = convs->run_koi_vcs_tx(input, aux);
+        } else
+#endif
+        {
+            // Returns: NTC layout
+            h = convs->forward(input);
+        }
     }
     {
         utils::ScopedProfileRange spr("TransEnc", 1);
-        h = tx_encoder(h);
+        h = tx_encoder(h, aux);
     }
     {
         utils::ScopedProfileRange spr("TransDec", 1);

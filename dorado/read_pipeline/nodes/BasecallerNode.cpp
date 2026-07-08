@@ -29,11 +29,23 @@ using namespace at::indexing;
 namespace dorado {
 
 struct BasecallerNode::BasecallingChunk : utils::Chunk {
+    // Non-VCS granularity is chunk_size
     BasecallingChunk(std::shared_ptr<BasecallingRead> owner,
                      size_t offset,
                      size_t chunk_in_read_idx,
                      size_t chunk_size)
-            : Chunk(offset, chunk_size),
+            : BasecallingChunk(std::move(owner),
+                               offset,
+                               chunk_in_read_idx,
+                               chunk_size,
+                               chunk_size) {}
+
+    BasecallingChunk(std::shared_ptr<BasecallingRead> owner,
+                     size_t offset,
+                     size_t chunk_in_read_idx,
+                     size_t chunk_size,
+                     size_t chunk_granularity)
+            : Chunk(offset, chunk_size, chunk_granularity),
               owning_read(std::move(owner)),
               idx_in_read(chunk_in_read_idx) {}
 
@@ -130,13 +142,17 @@ void BasecallerNode::input_thread_fn() {
 
         if (m_variable_chunk_sizes) {
             const std::vector<std::pair<std::size_t, std::size_t>> intervals =
-                    utils::generate_variable_chunks(raw_size, chunk_size, m_model_stride,
-                                                    m_overlap);
+                    m_is_tx_model ? utils::generate_variable_chunks_tx(
+                                            raw_size, chunk_size, m_model_stride,
+                                            m_chunk_size_granularity, m_overlap)
+                                  : utils::generate_variable_chunks(raw_size, chunk_size,
+                                                                    m_model_stride, m_overlap);
             read_chunks.reserve(std::size(intervals));
             for (std::size_t i = 0; i < std::size(intervals); ++i) {
                 read_chunks.emplace_back(std::make_unique<BasecallingChunk>(
                         working_read, intervals[i].first, i,
-                        intervals[i].second - intervals[i].first));
+                        intervals[i].second - intervals[i].first,
+                        m_is_tx_model ? m_chunk_size_granularity : m_model_stride));
             }
         } else {
             const std::vector<std::size_t> offsets =
@@ -299,6 +315,10 @@ void BasecallerNode::basecall_worker_thread(int worker_id) {
     const bool is_low_latency = m_model_runners[worker_id]->is_low_latency();
     const int chunk_queue_idx = worker_id % int(m_chunk_in_queues.size());
     auto &chunk_in_queue = *m_chunk_in_queues[chunk_queue_idx];
+    int max_conv_padding = -1;
+    for (auto conv_layer : m_model_runners[worker_id]->config().convs) {
+        max_conv_padding = std::max(max_conv_padding, conv_layer.winlen / 2);
+    }
 
     const size_t stride = m_model_runners[worker_id]->config().stride;
     const size_t max_worker_chunks_size = batch_size * ((chunk_size / stride) + 2);
@@ -315,11 +335,14 @@ void BasecallerNode::basecall_worker_thread(int worker_id) {
                   "AsyncQueue and chunk clocks should match");
 
     BatchedChunks current_batch(worker_id);
+    // Add initial padding to chunks_size before filling up new batch
+    current_batch.chunks_size = m_is_tx_model ? max_conv_padding : 0;
     std::vector<std::unique_ptr<BasecallingChunk>> popped_chunks;
 
     // If we're using VCS then we can't put bounds on the number of chunks required to fill a batch,
     // so reserve twice the space as a guess. When not using VCS we can try to pull a whole batch at
     // a time, or fill up our current batch, to reduce how often we contend the AsyncQueue.
+    // TODO: Tune this for Tx VCS
     const std::size_t variable_chunk_sizes_pop_size = 64;
     current_batch.chunks.reserve(m_variable_chunk_sizes ? 2 * batch_size : batch_size);
     popped_chunks.reserve(m_variable_chunk_sizes ? variable_chunk_sizes_pop_size : batch_size);
@@ -337,7 +360,9 @@ void BasecallerNode::basecall_worker_thread(int worker_id) {
 
         const bool is_full_batch = current_batch.chunks.size() == batch_size;
         const bool is_full_chunks_size = current_batch.chunks_size == max_worker_chunks_size;
-        if (m_variable_chunk_sizes ? is_full_chunks_size : is_full_batch) {
+        const bool is_full_batch_tx_vcs = current_batch.chunks_size >= batch_size * chunk_size;
+        if (m_variable_chunk_sizes ? (m_is_tx_model ? is_full_batch_tx_vcs : is_full_chunks_size)
+                                   : is_full_batch) {
             throw std::logic_error("Current batch is already full");
         }
 
@@ -406,28 +431,42 @@ void BasecallerNode::basecall_worker_thread(int worker_id) {
             }
 
             if (m_variable_chunk_sizes) {
-                size_t overhang = input_slice.size(1) % stride;
-                while (overhang != 0) {  // needed for input_slice.size(1) < (stride - overhang)
-                    input_slice =
-                            at::concat({input_slice,
-                                        input_slice.index({Ellipsis, Slice(0, stride - overhang)})},
-                                       1);
-                    overhang = input_slice.size(1) % stride;
+                size_t min_working_unit = m_is_tx_model ? m_chunk_size_granularity : stride;
+                size_t overhang = input_slice.size(1) % min_working_unit;
+                // needed for input_slice.size(1) < (min_working_unit - overhang)
+                while (overhang != 0) {
+                    input_slice = at::concat(
+                            {input_slice,
+                             input_slice.index({Ellipsis, Slice(0, min_working_unit - overhang)})},
+                            1);
+                    overhang = input_slice.size(1) % min_working_unit;
                 }
 
-                const size_t slice_size = (input_slice.size(1) / stride) + 2;
-                if ((worker_chunks_size_part + slice_size) > max_worker_chunks_size_part) {
-                    current_batch.chunks_size += max_worker_chunks_size_part;
-                    worker_chunks_size_part = 0;
+                if (m_is_tx_model) {
+                    const size_t slice_size = input_slice.size(1);
+                    if ((current_batch.chunks_size + slice_size + max_conv_padding) >
+                        (batch_size * chunk_size)) {
+                        basecall_current_batch(current_batch);
+                        // Add initial padding to chunks_size before filling up new batch
+                        current_batch.chunks_size = max_conv_padding;
+                    }
+                    current_batch.chunks_size += slice_size + max_conv_padding;
                 }
 
-                if (current_batch.chunks_size == max_worker_chunks_size) {
-                    // Input tensor can't accept any more chunks, so let's get_scores.
-                    basecall_current_batch(current_batch);
+                else {
+                    const size_t slice_size = (input_slice.size(1) / stride) + 2;
+                    if ((worker_chunks_size_part + slice_size) > max_worker_chunks_size_part) {
+                        current_batch.chunks_size += max_worker_chunks_size_part;
+                        worker_chunks_size_part = 0;
+                    }
+
+                    if (current_batch.chunks_size == max_worker_chunks_size) {
+                        // Input tensor can't accept any more chunks, so let's get_scores.
+                        basecall_current_batch(current_batch);
+                    }
+
+                    worker_chunks_size_part += slice_size;
                 }
-
-                worker_chunks_size_part += slice_size;
-
             } else {
                 // repeat-pad any non-full chunks
                 size_t slice_size = input_slice.size(1);
@@ -484,6 +523,8 @@ BasecallerNode::BasecallerNode(std::vector<basecall::RunnerPtr> model_runners,
           m_is_rna_model(is_rna_model(m_model_runners.front()->config())),
           m_model_name(std::move(model_name)),
           m_mean_qscore_start_pos(read_mean_qscore_start_pos),
+          m_is_tx_model(m_model_runners.front()->config().is_tx_model()),
+          m_chunk_size_granularity(m_model_runners.front()->config().chunk_size_granularity()),
           m_variable_chunk_sizes(m_model_runners.front()->variable_chunk_sizes()),
           m_processed_chunks(CalcMaxChunksIn(m_model_runners)),
           m_node_name(std::move(node_name)) {

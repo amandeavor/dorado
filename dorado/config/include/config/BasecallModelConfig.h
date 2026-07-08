@@ -59,7 +59,9 @@ struct TxEncoderParams {
     // MHA RoPE theta value
     float theta{10000.0f};
     // MHA RoPE maximum sequence length
-    int max_seq_len{2048};
+    // TODO: Tx VCS supports arbitrarily large chunk_size, study
+    // TODO: behaviour of max_seq_len and accuracy
+    int max_seq_len{4096};
     std::string to_string() const;
 };
 
@@ -156,7 +158,8 @@ struct BasecallModelConfig {
         basecaller.normalise(chunk_size_granularity(), stride_inner());
     }
 
-    int chunk_size_granularity() const { return stride_inner() * (is_tx_model() ? 16 : 1); }
+    // This is fine as long as chunk_size_granularity() is a multiple of non-VCS chunk_size
+    int chunk_size_granularity() const { return stride_inner() * (is_tx_model() ? 64 : 1); }
 
     // True if `chunk_size` is greater than `overlap` and evenly divisible by
     // `chunk_size_granularity`, and `overlap` is evenly divisible by `stride_inner`

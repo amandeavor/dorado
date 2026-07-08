@@ -32,15 +32,15 @@ CATCH_TEST_CASE(CUT_TAG ": test normalise BatchParams", CUT_TAG) {
                 fs::path(get_data_dir("model_configs/dna_r10.4.1_e8.2_400bps_sup@v5.0.0"));
         BasecallModelConfig config = load_model_config(path);
 
-        // Set chunksize to (12 * 16 * 10) + 1 to ensure it's not mod192
-        config.basecaller.set_chunk_size(1921);
+        // Set chunksize to (12 * 64 * 10) + 1 to ensure it's not mod768
+        config.basecaller.set_chunk_size(7681);
         CATCH_CHECK_FALSE(config.has_normalised_basecaller_params());
 
         config.normalise_basecaller_params();
         CATCH_CHECK(config.has_normalised_basecaller_params());
         CATCH_CHECK(config.basecaller.chunk_size() % config.stride_inner() == 0);
-        // Expected (1921 / 192) * 192
-        CATCH_CHECK(config.basecaller.chunk_size() == 1920);
+        // Expected (7681 / 768) * 768
+        CATCH_CHECK(config.basecaller.chunk_size() == 7680);
     }
 }
 
