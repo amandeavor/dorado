@@ -9,7 +9,7 @@
 .linux_regression_dependencies:
   before_script:
     - !reference [.create_venv]
-    - !reference [.prepare_git-lfs]
+    - !reference [.linux_run_git_lfs]
     - export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:${PWD}/lib
     - pip install pysam "--only-binary=:all:"
 
@@ -94,12 +94,6 @@
     - cuda-${CUDA}
     - on-prem
     - gpu-5070ti
-
-# We need this to check out the regression_test_data project, which has our test files in git-lfs.
-.prepare_git-lfs:
-  - apt update || true
-  - apt install -y git-lfs
-  - git lfs install || true
 
 
 ######################
