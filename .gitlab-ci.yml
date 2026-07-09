@@ -119,6 +119,7 @@ variables:
     - echo Dorado dependency stage
     - apt-get update
     - apt-get install -y --no-install-recommends samtools curl libsz2 ccache automake
+    - !reference [.linux_run_git_lfs]
 
 .linux_test_dependencies:
   before_script:
@@ -148,6 +149,8 @@ variables:
   - echo Dorado build stage
   - !reference [.set_parallel_jobs]
   - !reference [.setup_ccache]
+  # Sanity check that the build isn't dirty
+  - git diff --exit-code
   - echo "BUILD_OPTIONS '${BUILD_OPTIONS}'"
   - eval cmake ${BUILD_OPTIONS} -S . -B ${BUILD_DIR} -D CMAKE_BUILD_TYPE=${BUILD_TYPE} -D DORADO_ENABLE_BENCHMARK_TESTS=ON -DDORADO_3RD_PARTY_DOWNLOAD=dorado-dependencies
   - cmake --build ${BUILD_DIR} --config ${BUILD_TYPE} --target ${BUILD_TARGET} -j ${PARALLEL_JOBS}
@@ -178,6 +181,15 @@ variables:
   # cmake 3.31 has issues with macOS 13.6.6/curl 8.4.0 (see INSTX-7966)
   - pip install -U "cmake<3.31"
   - cmake --version
+
+# GitLab seems to have issues with git-lfs in non-Ubuntu docker runners, so we
+# have to manually pull the references. We also need this to check out the
+# regression_test_data project.
+.linux_run_git_lfs:
+  - apt update || true
+  - apt install -y git-lfs || dnf install -y git-lfs
+  - git lfs install || true
+  - git lfs pull
 
 .run_tetra_tests:
   # pysam is not available on all platforms, but the tests can run without it.
@@ -533,6 +545,7 @@ build_archive:linux:arm64:cuda13:
     ONT_PYTHON_URL: ${ONT_PYTHON_URL_PREFIX}/${ONT_PYTHON_FILENAME_LINUX_X86_313}
   script:
     - source /opt/rh/gcc-toolset-11/enable
+    - !reference [.linux_run_git_lfs]
     - !reference [.build_dorado_archive, script]
   extends:
     - .linux_runner
