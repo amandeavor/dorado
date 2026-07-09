@@ -6,14 +6,16 @@
 
 #include <cassert>
 #include <numeric>
+#include <span>
 
 namespace dorado::utils {
 
-void stitch_chunks(ReadCommon& read_common, std::span<const Chunk*> called_chunks) {
-    assert(static_cast<int>(div_round_closest(pad_to(called_chunks[0]->raw_chunk_size,
-                                                     called_chunks[0]->chunk_size_granularity),
-                                              called_chunks[0]->moves.size())) ==
-           read_common.attributes.model_stride);
+void stitch_chunks(ReadCommon& read_common, std::span<const Chunk*> called_chunks, bool is_vcs) {
+    assert(std::all_of(std::begin(called_chunks), std::end(called_chunks), [&](const auto& chunk) {
+        return static_cast<int>(div_round_closest(
+                       pad_to(chunk->raw_chunk_size, chunk->chunk_size_granularity),
+                       chunk->moves.size())) == read_common.attributes.model_stride;
+    }));
 
     int start_pos = 0;
     int mid_point_front = 0;
@@ -58,29 +60,33 @@ void stitch_chunks(ReadCommon& read_common, std::span<const Chunk*> called_chunk
 
     // Append the final chunk
     auto& last_chunk = called_chunks.back();
-    moves.insert(moves.end(), std::next(last_chunk->moves.begin(), mid_point_front),
-                 last_chunk->moves.end());
     const std::string_view last_seq = last_chunk->seq;
     const std::string_view last_qstring = last_chunk->qstring;
+    auto last_moves = std::span<const uint8_t>(last_chunk->moves);
 
-    if (called_chunks.size() == 1) {
-        // shorten the sequence, qstring & moves where the read is shorter than chunksize
+    if (called_chunks.size() == 1 || is_vcs) {
+        // shorten the sequence, qstring & moves where the actual read signal is shorter than chunksize
+        int signal_size = std::min(read_common.get_raw_data_samples(), last_chunk->raw_chunk_size);
         const int last_index_in_moves_to_keep =
-                int(read_common.get_raw_data_samples() / read_common.attributes.model_stride);
-        moves = std::vector<uint8_t>(moves.begin(), moves.begin() + last_index_in_moves_to_keep);
-        const int end = std::reduce(moves.begin(), moves.end(), 0);
+                div_round_up(signal_size, read_common.attributes.model_stride);
+        last_moves =
+                last_moves.subspan(mid_point_front, last_index_in_moves_to_keep - mid_point_front);
+        const int end = std::reduce(last_moves.begin(), last_moves.end(), 0);
         sequences.push_back(last_seq.substr(start_pos, end));
         qstrings.push_back(last_qstring.substr(start_pos, end));
 
     } else {
         sequences.push_back(last_seq.substr(start_pos));
         qstrings.push_back(last_qstring.substr(start_pos));
+        last_moves = last_moves.subspan(mid_point_front);
     }
 
     // Set the read seq and qstring
     read_common.seq = utils::join(sequences, {});
     read_common.qstring = utils::join(qstrings, {});
     read_common.moves = std::move(moves);
+    read_common.moves.insert(std::end(read_common.moves), std::begin(last_moves),
+                             std::end(last_moves));
 
     // remove partial stride overhang
     if (static_cast<int>(read_common.moves.size()) >

@@ -32,6 +32,6 @@ struct Chunk {
 
 // Given a read and its unstitched chunks, stitch the chunks (accounting for overlap) and assign basecalled read and
 // qstring to Read
-void stitch_chunks(ReadCommon& read, std::span<const Chunk*> called_chunks);
+void stitch_chunks(ReadCommon& read, std::span<const Chunk*> called_chunks, bool is_vcs);
 
 }  // namespace dorado::utils

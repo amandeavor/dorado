@@ -250,7 +250,7 @@ void BasecallerNode::working_reads_manager() {
             for (const auto &called_chunk : working_read->called_chunks) {
                 chunks_to_stitch.emplace_back(called_chunk.get());
             }
-            utils::stitch_chunks(read_common_data, chunks_to_stitch);
+            utils::stitch_chunks(read_common_data, chunks_to_stitch, m_variable_chunk_sizes);
             read_common_data.model_name = m_model_name;
             read_common_data.mean_qscore_start_pos = m_mean_qscore_start_pos;
             read_common_data.pre_trim_seq_length = read_common_data.seq.length();
