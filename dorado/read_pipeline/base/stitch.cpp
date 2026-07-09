@@ -66,7 +66,8 @@ void stitch_chunks(ReadCommon& read_common, std::span<const Chunk*> called_chunk
 
     if (called_chunks.size() == 1 || is_vcs) {
         // shorten the sequence, qstring & moves where the actual read signal is shorter than chunksize
-        int signal_size = std::min(read_common.get_raw_data_samples(), last_chunk->raw_chunk_size);
+        const int signal_size =
+                std::min(read_common.get_raw_data_samples(), last_chunk->raw_chunk_size);
         const int last_index_in_moves_to_keep =
                 div_round_up(signal_size, read_common.attributes.model_stride);
         last_moves =
