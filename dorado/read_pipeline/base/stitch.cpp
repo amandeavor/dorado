@@ -11,6 +11,10 @@
 namespace dorado::utils {
 
 void stitch_chunks(ReadCommon& read_common, std::span<const Chunk*> called_chunks, bool is_vcs) {
+    if (called_chunks.empty()) {
+        return;
+    }
+
     assert(std::all_of(std::begin(called_chunks), std::end(called_chunks), [&](const auto& chunk) {
         return static_cast<int>(div_round_closest(
                        pad_to(chunk->raw_chunk_size, chunk->chunk_size_granularity),
