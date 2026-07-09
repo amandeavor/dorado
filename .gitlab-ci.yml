@@ -148,6 +148,8 @@ variables:
   - echo Dorado build stage
   - !reference [.set_parallel_jobs]
   - !reference [.setup_ccache]
+  # Sanity check that the build isn't dirty
+  - git diff --exit-code
   - echo "BUILD_OPTIONS '${BUILD_OPTIONS}'"
   - eval cmake ${BUILD_OPTIONS} -S . -B ${BUILD_DIR} -D CMAKE_BUILD_TYPE=${BUILD_TYPE} -D DORADO_ENABLE_BENCHMARK_TESTS=ON -DDORADO_3RD_PARTY_DOWNLOAD=dorado-dependencies
   - cmake --build ${BUILD_DIR} --config ${BUILD_TYPE} --target ${BUILD_TARGET} -j ${PARALLEL_JOBS}
