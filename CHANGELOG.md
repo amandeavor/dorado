@@ -2,7 +2,7 @@
 
 All notable changes to Dorado will be documented in this file.
 
-# [2.1.0] (9 July 2026)
+# [2.1.0] (13 July 2026)
 
 This version of Dorado introduces performance improvements for v6.0.0 HAC models on Blackwell GPUs. Performance of v5.0.0+ SUP models has also been improved, especially for short reads. This release also contains a collection of feature improvements and bug fixes for Dorado `smallvar`, including initial gVCF support.
 
