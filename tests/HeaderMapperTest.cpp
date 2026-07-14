@@ -115,8 +115,8 @@ CATCH_TEST_CASE(TEST_GROUP " parse multiple inputs", TEST_GROUP) {
 }
 
 CATCH_TEST_CASE(TEST_GROUP " fallback for BAM without RG lines", TEST_GROUP) {
-    auto temp_dir = dorado::tests::make_temp_dir("header_mapper_no_rg");
-    auto bam_path = write_bam_without_rg(temp_dir.m_path, "no_rg.bam");
+    const auto temp_dir = dorado::tests::make_temp_dir("header_mapper_no_rg");
+    const auto bam_path = write_bam_without_rg(temp_dir.m_path, "no_rg.bam");
 
     utils::HeaderMapper mapper({bam_path}, false);
     HtsReader reader(bam_path.string(), std::nullopt);
@@ -132,9 +132,9 @@ CATCH_TEST_CASE(TEST_GROUP " fallback for BAM without RG lines", TEST_GROUP) {
 
 CATCH_TEST_CASE(TEST_GROUP " fallback merges multiple BAMs without RG lines", TEST_GROUP) {
     // Create two BAMS without RG lines
-    auto temp_dir = dorado::tests::make_temp_dir("header_mapper_multi_no_rg");
-    auto first_bam = write_bam_without_rg(temp_dir.m_path, "no_rg_one.bam");
-    auto second_bam = write_bam_without_rg(temp_dir.m_path, "no_rg_two.bam");
+    const auto temp_dir = dorado::tests::make_temp_dir("header_mapper_multi_no_rg");
+    const auto first_bam = write_bam_without_rg(temp_dir.m_path, "no_rg_one.bam");
+    const auto second_bam = write_bam_without_rg(temp_dir.m_path, "no_rg_two.bam");
 
     // Map headers for both files
     utils::HeaderMapper mapper({first_bam, second_bam}, false);
