@@ -124,6 +124,10 @@ variables:
   - ctest -C ${BUILD_TYPE} --test-dir ${BUILD_DIR} --output-on-failure --verbose
 
 .create_venv:
+  # workaround for CI picking the wrong python until runners are rebuilt
+  - if [[ $OSTYPE == 'darwin'* ]]; then
+  -   PATH="/opt/homebrew/bin:$PATH"
+  - fi
   # Make a venv and install stuff we need.
   - export KERNEL=$(uname -s)
   - if [[ ${KERNEL} =~ "MINGW" ]]; then
