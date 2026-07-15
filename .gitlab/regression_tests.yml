@@ -37,7 +37,7 @@
     - on-prem
     # Modbase regression results depend on the MPS version which depends on the OS version,
     # so pin the OS to the one that we have the most runners of.
-    - osx-14.4
+    - osx-14.7
 
 .linux_regression_runner_v100:
   tags:
