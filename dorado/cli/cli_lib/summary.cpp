@@ -86,10 +86,11 @@ int summary(int argc, char *argv[]) {
         std::exit(EXIT_FAILURE);
     }
 
+    std::unique_ptr<utils::HeaderMapper> header_mapper;
     if (!reads.empty()) {
-        utils::HeaderMapper header_mapper(all_files, false);
+        header_mapper = std::make_unique<utils::HeaderMapper>(all_files, false);
         pipeline->get_node_ref<WriterNode>(writer_node)
-                .set_dynamic_header(header_mapper.get_merged_headers_map());
+                .set_dynamic_header(header_mapper->get_merged_headers_map());
     } else {
         spdlog::warn(
                 "Reading from stdin: unable to check for polyA, barcode or alignment information. "
@@ -116,7 +117,7 @@ int summary(int argc, char *argv[]) {
             });
         }
 
-        reader.read(*pipeline, 0, false, nullptr, true);
+        reader.read(*pipeline, 0, false, header_mapper.get(), true);
     }
     pipeline->terminate({.fast = utils::AsyncQueueTerminateFast::No});
 
