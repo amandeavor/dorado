@@ -2,6 +2,14 @@
 
 All notable changes to Dorado will be documented in this file.
 
+# [2.1.1] (27 July 2026)
+
+This version of Dorado includes bug fixes following the Dorado 2.1.0 release.
+
+* 5174cb76ae721954b96c62cb8f94bff2120c7492 - Fix minor non-determinism when running v5.0.0 onwards SUP models with variable chunk size optimisation.
+* 73bd3182fa728ad2c49b41bb04d3de715f20e279 - Fix occurrence of variants with missing alt alleles and incorrect genotype in Dorado `smallvar`.
+
+
 # [2.1.0] (13 July 2026)
 
 This version of Dorado introduces performance improvements for v6.0.0 HAC models on Blackwell GPUs. Performance of v5.0.0+ SUP models has also been improved, especially for short reads. This release also contains a collection of feature improvements and bug fixes for Dorado `smallvar`, including initial gVCF support.
