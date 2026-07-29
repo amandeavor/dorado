@@ -2,7 +2,7 @@
 
 All notable changes to Dorado will be documented in this file.
 
-# [2.1.1] (27 July 2026)
+# [2.1.1] (30 July 2026)
 
 This version of Dorado includes bug fixes following the Dorado 2.1.0 release.
 
