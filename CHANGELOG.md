@@ -2,6 +2,13 @@
 
 All notable changes to Dorado will be documented in this file.
 
+# [2.1.2] (26 August 2026)
+
+This version of Dorado includes bug fixes following the Dorado 2.1.1 release.
+
+* 5f1bd6aa37718b7f8ee038d46e660f29deead6e5 - Fix Dorado `summary` barcode_arrangement column always being set as `unclassified`.
+* b23b9b90f109060d5197084d6ca985bf62d33699 - Fix non-determinism with v6.0.0 HAC model.
+
 # [2.1.1] (30 July 2026)
 
 This version of Dorado includes bug fixes following the Dorado 2.1.0 release.
