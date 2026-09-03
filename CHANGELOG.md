@@ -2,6 +2,12 @@
 
 All notable changes to Dorado will be documented in this file.
 
+# [1.3.4] (3 September 2026)
+
+This release of Dorado adds a bug fix backport to the 1.3.x release.
+
+* 640f8afee8819a108e5147e5a6a7aa5c562ee84f - Fix `cannot write chunk end` crash when running HAC models.
+
 # [1.3.3] (22 July 2026)
 
 This release of Dorado adds support for PromethION Plus (FLO-PRO114P) Flow Cells. Note that this support is not yet included in later releases. This release also contains bug fix backports.  Dorado 1.3.3 is the version included in the MinKNOW 26.01 Long Term Support (LTS) release.
